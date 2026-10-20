@@ -1,13 +1,23 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'pages/ai_page.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
+import 'pages/profile_page.dart';
 import 'pages/splash_page.dart';
+import 'pages/trips_page.dart';
 import 'pages/vehicles_page.dart';
 import 'theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
   runApp(const DriveMateApp());
 }
 
@@ -79,15 +89,26 @@ class _MainNavigationState extends State<MainNavigation> {
     Icons.person_outline_rounded,
   ];
 
+  void _onTabChanged(int index) {
+    setState(() {
+      selectedIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.background,
-      body: switch (selectedIndex) {
-        0 => const HomePage(),
-        1 => const VehiclesPage(),
-        _ => _buildPlaceholderPage(),
-      },
+      body: IndexedStack(
+        index: selectedIndex,
+        children: [
+          HomePage(onNavigateTab: _onTabChanged),
+          const VehiclesPage(),
+          const TripsPage(),
+          const AiPage(),
+          ProfilePage(onNavigateTab: _onTabChanged),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -112,11 +133,7 @@ class _MainNavigationState extends State<MainNavigation> {
             indicatorColor: AppTheme.primary.withValues(alpha: 0.12),
             height: 70,
             labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            onDestinationSelected: (index) {
-              setState(() {
-                selectedIndex = index;
-              });
-            },
+            onDestinationSelected: _onTabChanged,
             destinations: List.generate(
               labels.length,
               (index) => NavigationDestination(
@@ -128,78 +145,6 @@ class _MainNavigationState extends State<MainNavigation> {
                 label: labels[index],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlaceholderPage() {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        title: Text(
-          labels[selectedIndex],
-          style: const TextStyle(
-            color: AppTheme.textPrimary,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                child: Icon(
-                  icons[selectedIndex],
-                  size: 42,
-                  color: AppTheme.primary,
-                ),
-              ),
-              const SizedBox(height: 22),
-              Text(
-                labels[selectedIndex],
-                style: const TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 23,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Halaman ini sedang dikembangkan '
-                'untuk melengkapi DriveMate.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 13,
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: 22),
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    selectedIndex = 0;
-                  });
-                },
-                icon: const Icon(Icons.home_rounded),
-                label: const Text('Kembali ke Home'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primary,
-                  side: const BorderSide(color: AppTheme.primary),
-                ),
-              ),
-            ],
           ),
         ),
       ),

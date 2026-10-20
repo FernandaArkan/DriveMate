@@ -1,9 +1,10 @@
-
 import 'package:flutter/material.dart';
 
 import '../models/vehicle.dart';
+import '../repositories/vehicle_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/vehicle_form_dialog.dart';
+import 'service_history_page.dart';
 
 class VehiclesPage extends StatefulWidget {
   const VehiclesPage({super.key});
@@ -13,37 +14,45 @@ class VehiclesPage extends StatefulWidget {
 }
 
 class _VehiclesPageState extends State<VehiclesPage> {
-  final List<Vehicle> _vehicles = [
-    Vehicle(
-      name: 'Civic',
-      brand: 'Honda',
-      year: 2022,
-      plate: 'B 1234 XYZ',
-      mileage: 12450,
-    ),
-    Vehicle(
-      name: 'NMAX',
-      brand: 'Yamaha',
-      year: 2023,
-      plate: 'AB 5678 CD',
-      mileage: 8200,
-    ),
-  ];
-
+  final VehicleRepository _repo = VehicleRepository.instance;
   String _searchQuery = '';
+  int? _selectedVehicleId;
+
+  @override
+  void initState() {
+    super.initState();
+    _repo.addListener(_onRepoUpdated);
+    _repo.loadVehicles();
+  }
+
+  @override
+  void dispose() {
+    _repo.removeListener(_onRepoUpdated);
+    super.dispose();
+  }
+
+  void _onRepoUpdated() {
+    if (mounted) setState(() {});
+  }
+
+  Vehicle? get _activeVehicle {
+    if (_repo.vehicles.isEmpty) return null;
+    if (_selectedVehicleId != null) {
+      final found = _repo.vehicles.where((v) => v.id == _selectedVehicleId);
+      if (found.isNotEmpty) return found.first;
+    }
+    return _repo.primaryVehicle ?? _repo.vehicles.first;
+  }
 
   List<Vehicle> get _filteredVehicles {
     final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return _repo.vehicles;
 
-    if (query.isEmpty) {
-      return _vehicles;
-    }
-
-    return _vehicles.where((vehicle) {
-      return vehicle.name.toLowerCase().contains(query) ||
-          vehicle.brand.toLowerCase().contains(query) ||
-          vehicle.plate.toLowerCase().contains(query) ||
-          vehicle.year.toString().contains(query);
+    return _repo.vehicles.where((v) {
+      return v.name.toLowerCase().contains(query) ||
+          v.brand.toLowerCase().contains(query) ||
+          v.plate.toLowerCase().contains(query) ||
+          v.year.toString().contains(query);
     }).toList();
   }
 
@@ -56,26 +65,24 @@ class _VehiclesPageState extends State<VehiclesPage> {
 
     if (!mounted || result == null) return;
 
-    setState(() {
-      if (vehicle == null) {
-        _vehicles.add(result);
-      } else {
-        final index = _vehicles.indexOf(vehicle);
+    bool success;
+    if (vehicle == null) {
+      success = await _repo.addVehicle(result);
+    } else {
+      success = await _repo.updateVehicle(result);
+    }
 
-        if (index != -1) {
-          _vehicles[index] = result;
-        }
-      }
-    });
-
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(
-            vehicle == null
-                ? 'Kendaraan berhasil ditambahkan.'
-                : 'Kendaraan berhasil diperbarui.',
+            success
+                ? (vehicle == null
+                    ? 'Kendaraan berhasil ditambahkan ke database.'
+                    : 'Data kendaraan berhasil diperbarui.')
+                : 'Gagal memproses data kendaraan.',
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -87,10 +94,14 @@ class _VehiclesPageState extends State<VehiclesPage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Hapus Kendaraan'),
+          backgroundColor: Colors.white,
+          title: const Text(
+            'Hapus Kendaraan',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
           content: Text(
             'Apakah Anda yakin ingin menghapus '
-            '${vehicle.brand} ${vehicle.name}?',
+            '${vehicle.brand} ${vehicle.name} (${vehicle.plate}) dari database?',
           ),
           actions: [
             TextButton(
@@ -109,548 +120,540 @@ class _VehiclesPageState extends State<VehiclesPage> {
       },
     );
 
-    if (!mounted || confirmed != true) return;
+    if (!mounted || confirmed != true || vehicle.id == null) return;
 
-    setState(() {
-      _vehicles.remove(vehicle);
-    });
+    final success = await _repo.deleteVehicle(vehicle.id!);
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        const SnackBar(
-          content: Text('Kendaraan berhasil dihapus.'),
+        SnackBar(
+          content: Text(
+            success
+                ? 'Kendaraan berhasil dihapus.'
+                : 'Gagal menghapus kendaraan.',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
   }
 
+  void _showDetailModal(Vehicle vehicle) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${vehicle.brand} ${vehicle.name}',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.success.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      vehicle.status,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.success,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _detailRow('Nomor Polisi', vehicle.plate),
+              _detailRow('Tahun Pembuatan', '${vehicle.year}'),
+              _detailRow('Total Jarak Tempuh', '${_formatMileage(vehicle.mileage)} km'),
+              _detailRow('Kapasitas Bahan Bakar', '${vehicle.fuelLevel}%'),
+              _detailRow('Servis Terakhir', vehicle.lastServiceDate ?? '10 Mar 2025'),
+              _detailRow('Jatuh Tempo Pajak', vehicle.taxDueDate ?? '12 Jul 2026'),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Tutup'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCostModal(Vehicle vehicle) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Estimasi Biaya Perawatan',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Untuk ${vehicle.brand} ${vehicle.name} (${vehicle.plate})',
+                style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 18),
+              _detailRow('Servis Berkala Berikutnya', 'Rp 1.250.000'),
+              _detailRow('Estimasi Ganti Oli', 'Rp 450.000'),
+              _detailRow('Pajak Tahunan PKB', 'Rp 3.850.000'),
+              _detailRow('Pengeluaran Servis Tahun Ini', 'Rp 2.400.000'),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Kembali'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDocumentModal(Vehicle vehicle) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Dokumen Kendaraan',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _detailRow('Nomor Polisi (STNK)', vehicle.plate),
+              _detailRow('Masa Berlaku STNK 5 Thn', '12 Juli 2029'),
+              _detailRow('Pajak Tahunan', vehicle.taxDueDate ?? '12 Juli 2026'),
+              _detailRow('Status BPKB', 'Lengkap (Tersimpan Aman)'),
+              _detailRow('Asuransi Kendaraan', 'Comprehensive (All Risk)'),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Tutup'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filteredVehicles = _filteredVehicles;
+    final active = _activeVehicle;
+    final allVehicles = _filteredVehicles;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                child: _buildHeader(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildSummaryCard(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
-                child: _buildSearchField(),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Daftar Kendaraan',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.textPrimary,
-                        ),
-                      ),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          children: [
+            // HEADER DENGAN TOMBOL TAMBAH KENDARAAN (PERSIS MOCKUP LAYAR 4)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Kendaraan',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: () => _openForm(),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Tambah Kendaraan'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    Text(
-                      '${filteredVehicles.length} kendaraan',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textSecondary,
-                      ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // PENCARIAN KENDARAAN
+            TextField(
+              onChanged: (val) => setState(() => _searchQuery = val),
+              decoration: InputDecoration(
+                hintText: 'Cari nama, merek, atau plat nomor...',
+                hintStyle: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.textSecondary, size: 20),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            if (_repo.isLoading)
+              const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+            else if (active == null)
+              _buildEmptyState()
+            else ...[
+              // KARTU KENDARAAN AKTIF (PERSIS MOCKUP LAYAR 4)
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFE5EDF7)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.navy.withValues(alpha: 0.04),
+                      blurRadius: 15,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${active.brand} ${active.name} ${active.year}',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                active.plate,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppTheme.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary.withValues(alpha: 0.09),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  active.isPrimary ? 'Kendaraan Utama' : 'Kendaraan Tambahan',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Gambar Mobil di Kanan (Mockup Layar 4)
+                        SizedBox(
+                          width: 130,
+                          height: 75,
+                          child: Image.asset(
+                            'assets/images/honda_civic.png',
+                            fit: BoxFit.contain,
+                            alignment: Alignment.centerRight,
+                            errorBuilder: (context, error, stackTrace) => const Icon(
+                              Icons.directions_car_filled_rounded,
+                              size: 60,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Jarak: ${_formatMileage(active.mileage)} km',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                        ),
+                        Text(
+                          'Bahan Bakar: ${active.fuelLevel}%',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            ),
-            if (filteredVehicles.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _buildEmptyState(),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final vehicle = filteredVehicles[index];
 
+              const SizedBox(height: 16),
+
+              // PILIH KENDARAAN (JIKA ADA LEBIH DARI 1)
+              if (allVehicles.length > 1) ...[
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: allVehicles.map((v) {
+                      final isSelected = v.id == active.id;
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: _vehicleCard(vehicle),
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text('${v.brand} ${v.name} (${v.plate})'),
+                          selected: isSelected,
+                          onSelected: (val) {
+                            if (val && v.id != null) {
+                              setState(() => _selectedVehicleId = v.id);
+                              _repo.setPrimaryVehicle(v.id!);
+                            }
+                          },
+                          selectedColor: AppTheme.navy,
+                          labelStyle: TextStyle(
+                            color: isSelected ? Colors.white : AppTheme.textPrimary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          backgroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
                       );
-                    },
-                    childCount: filteredVehicles.length,
+                    }).toList(),
                   ),
                 ),
+                const SizedBox(height: 16),
+              ],
+
+              // MENU LIST KENDARAAN (PERSIS MOCKUP LAYAR 4)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE5EDF7)),
+                ),
+                child: Column(
+                  children: [
+                    _buildMenuItem(
+                      icon: Icons.article_outlined,
+                      title: 'Detail Kendaraan',
+                      onTap: () => _showDetailModal(active),
+                    ),
+                    const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+                    _buildMenuItem(
+                      icon: Icons.history_rounded,
+                      title: 'Riwayat Servis',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ServiceHistoryPage(initialVehicle: active),
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+                    _buildMenuItem(
+                      icon: Icons.payments_outlined,
+                      title: 'Biaya Perawatan',
+                      onTap: () => _showCostModal(active),
+                    ),
+                    const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+                    _buildMenuItem(
+                      icon: Icons.description_outlined,
+                      title: 'Dokumen Kendaraan',
+                      onTap: () => _showDocumentModal(active),
+                    ),
+                    const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+                    _buildMenuItem(
+                      icon: Icons.edit_outlined,
+                      title: 'Edit Data',
+                      onTap: () => _openForm(vehicle: active),
+                    ),
+                    const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+                    _buildMenuItem(
+                      icon: Icons.delete_outline_rounded,
+                      title: 'Hapus Kendaraan',
+                      color: AppTheme.danger,
+                      onTap: () => _deleteVehicle(active),
+                    ),
+                  ],
+                ),
               ),
+            ],
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text(
-          'Tambah Kendaraan',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-      ),
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: const Icon(
-            Icons.directions_car_rounded,
-            color: AppTheme.primary,
-            size: 27,
-          ),
-        ),
-        const SizedBox(width: 13),
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Kendaraan Saya',
-                style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 23,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.6,
-                ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Kelola kendaraan kesayanganmu',
-                style: TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSummaryCard() {
-    final totalMileage = _vehicles.fold<int>(
-      0,
-      (total, vehicle) => total + vehicle.mileage,
-    );
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppTheme.navy, AppTheme.primary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.navy.withValues(alpha: 0.12),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Ringkasan Kendaraan',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _summaryItem(
-                  icon: Icons.directions_car_rounded,
-                  value: '${_vehicles.length}',
-                  label: 'Kendaraan',
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 48,
-                color: Colors.white24,
-              ),
-              Expanded(
-                child: _summaryItem(
-                  icon: Icons.speed_rounded,
-                  value: _formatMileage(totalMileage),
-                  label: 'Total kilometer',
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _summaryItem({
+  Widget _buildMenuItem({
     required IconData icon,
-    required String value,
-    required String label,
+    required String title,
+    required VoidCallback onTap,
+    Color color = AppTheme.textPrimary,
   }) {
-    return Row(
-      children: [
-        Icon(icon, color: AppTheme.cyan, size: 25),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: color,
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 10,
-                ),
-              ),
-            ],
-          ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: color == AppTheme.danger ? AppTheme.danger : AppTheme.textSecondary,
+              size: 20,
+            ),
+          ],
         ),
-      ],
-    );
-  }
-
-  Widget _buildSearchField() {
-    return TextField(
-      onChanged: (value) {
-        setState(() {
-          _searchQuery = value;
-        });
-      },
-      decoration: InputDecoration(
-        hintText: 'Cari nama, merek, atau nomor polisi...',
-        hintStyle: const TextStyle(
-          fontSize: 12,
-          color: AppTheme.textSecondary,
-        ),
-        prefixIcon: const Icon(
-          Icons.search_rounded,
-          color: AppTheme.textSecondary,
-        ),
-        filled: true,
-        fillColor: AppTheme.surface,
-        contentPadding: const EdgeInsets.symmetric(vertical: 15),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: AppTheme.textSecondary.withValues(alpha: 0.10),
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(
-            color: AppTheme.primary,
-            width: 1.3,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _vehicleCard(Vehicle vehicle) {
-    return Container(
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: AppTheme.textSecondary.withValues(alpha: 0.08),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.navy.withValues(alpha: 0.035),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(17),
-                ),
-                child: const Icon(
-                  Icons.directions_car_filled_rounded,
-                  size: 32,
-                  color: AppTheme.primary,
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${vehicle.brand} ${vehicle.name}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      'Tahun ${vehicle.year}',
-                      style: const TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppTheme.background,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        vehicle.plate,
-                        style: const TextStyle(
-                          color: AppTheme.textPrimary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.7,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Menu kendaraan',
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _openForm(vehicle: vehicle);
-                  } else if (value == 'delete') {
-                    _deleteVehicle(vehicle);
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_outlined, size: 19),
-                        SizedBox(width: 10),
-                        Text('Edit kendaraan'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.delete_outline_rounded,
-                          color: AppTheme.danger,
-                          size: 19,
-                        ),
-                        SizedBox(width: 10),
-                        Text('Hapus kendaraan'),
-                      ],
-                    ),
-                  ),
-                ],
-                icon: const Icon(
-                  Icons.more_vert_rounded,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          const Divider(height: 1, color: AppTheme.background),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              const Icon(
-                Icons.speed_rounded,
-                size: 18,
-                color: AppTheme.primary,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Jarak tempuh',
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              Text(
-                '${_formatMileage(vehicle.mileage)} km',
-                style: const TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 13),
-          Row(
-            children: [
-              const Icon(
-                Icons.build_circle_outlined,
-                size: 18,
-                color: AppTheme.success,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Status kendaraan',
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.success.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Terdaftar',
-                  style: TextStyle(
-                    color: AppTheme.success,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    final isSearching = _searchQuery.trim().isNotEmpty;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 85,
-              height: 85,
+              width: 80,
+              height: 80,
               decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.08),
+                color: AppTheme.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                isSearching
-                    ? Icons.search_off_rounded
-                    : Icons.directions_car_outlined,
-                color: AppTheme.primary,
-                size: 40,
-              ),
+              child: const Icon(Icons.directions_car_outlined, size: 40, color: AppTheme.primary),
             ),
-            const SizedBox(height: 18),
-            Text(
-              isSearching
-                  ? 'Kendaraan tidak ditemukan'
-                  : 'Belum ada kendaraan',
-              style: const TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-              ),
+            const SizedBox(height: 16),
+            const Text(
+              'Belum ada kendaraan',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
             ),
             const SizedBox(height: 8),
-            Text(
-              isSearching
-                  ? 'Coba gunakan kata kunci yang berbeda.'
-                  : 'Tambahkan kendaraan agar bisa dikelola di DriveMate.',
+            const Text(
+              'Tambahkan kendaraan Anda untuk mulai memantau dan mencatat servis.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 12,
-                height: 1.5,
-              ),
+              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
-            if (!isSearching) ...[
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: () => _openForm(),
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Tambah Kendaraan'),
-              ),
-            ],
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: () => _openForm(),
+              icon: const Icon(Icons.add),
+              label: const Text('Tambah Kendaraan'),
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+            ),
           ],
         ),
       ),
@@ -659,8 +662,8 @@ class _VehiclesPageState extends State<VehiclesPage> {
 
   String _formatMileage(int mileage) {
     return mileage.toString().replaceAllMapped(
-      RegExp(r'\B(?=(\d{3})+(?!\d))'),
-      (_) => '.',
-    );
+          RegExp(r'\B(?=(\d{3})+(?!\d))'),
+          (_) => '.',
+        );
   }
 }

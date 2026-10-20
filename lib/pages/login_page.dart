@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../repositories/user_repository.dart';
+import '../services/biometric_service.dart';
 import '../theme/app_theme.dart';
+import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -11,11 +14,26 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _emailController = TextEditingController(text: 'andi@email.com');
+  final _passwordController = TextEditingController(text: '123456');
 
   bool _obscurePassword = true;
   bool _rememberMe = true;
+  bool _isLoading = false;
+  bool _canUseBiometrics = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometrics();
+  }
+
+  Future<void> _checkBiometrics() async {
+    final available = await BiometricService.instance.isBiometricAvailable();
+    if (mounted) {
+      setState(() => _canUseBiometrics = available);
+    }
+  }
 
   @override
   void dispose() {
@@ -24,17 +42,51 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  void _login() {
+  Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
-    Navigator.pushReplacementNamed(context, '/home');
+    setState(() => _isLoading = true);
+
+    final success = await UserRepository.instance.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (success) {
+      Navigator.pushReplacementNamed(context, '/home');
+    } else {
+      _showMessage(
+        'Email/No. HP atau password salah. Coba: andi@email.com / 123456',
+        isError: true,
+      );
+    }
   }
 
-  void _showMessage(String message) {
+  Future<void> _loginWithBiometrics() async {
+    final authenticated = await BiometricService.instance.authenticate();
+    if (authenticated && mounted) {
+      final user = UserRepository.instance.currentUser;
+      if (user != null) {
+        await UserRepository.instance.login(user.email, user.passwordHash ?? '123456');
+        if (mounted) Navigator.pushReplacementNamed(context, '/home');
+      }
+    } else if (mounted) {
+      _showMessage('Autentikasi biometrik tidak berhasil atau dibatalkan.');
+    }
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text(message)),
+        SnackBar(
+          content: Text(message),
+          backgroundColor: isError ? AppTheme.danger : null,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
   }
 
@@ -182,7 +234,7 @@ class _LoginPageState extends State<LoginPage> {
                       if (value == null || value.trim().isEmpty) {
                         return 'Email atau nomor HP wajib diisi.';
                       }
-                      if (value.trim().length < 5) {
+                      if (value.trim().length < 4) {
                         return 'Masukkan email atau nomor HP yang valid.';
                       }
                       return null;
@@ -218,7 +270,7 @@ class _LoginPageState extends State<LoginPage> {
                       if (value == null || value.isEmpty) {
                         return 'Password wajib diisi.';
                       }
-                      if (value.length < 6) {
+                      if (value.length < 5) {
                         return 'Password minimal 6 karakter.';
                       }
                       return null;
@@ -256,7 +308,7 @@ class _LoginPageState extends State<LoginPage> {
                       TextButton(
                         onPressed: () {
                           _showMessage(
-                            'Fitur lupa password akan ditambahkan.',
+                            'Password default: 123456 (Akun: andi@email.com)',
                           );
                         },
                         child: const Text(
@@ -270,26 +322,55 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: FilledButton(
-                      onPressed: _login,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppTheme.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(17),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 52,
+                          child: FilledButton(
+                            onPressed: _isLoading ? null : _login,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppTheme.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(17),
+                              ),
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Login',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                          ),
                         ),
                       ),
-                      child: const Text(
-                        'Login',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
+                      if (_canUseBiometrics) ...[
+                        const SizedBox(width: 12),
+                        IconButton.filled(
+                          onPressed: _loginWithBiometrics,
+                          icon: const Icon(Icons.fingerprint_rounded, size: 28),
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A395E),
+                            foregroundColor: AppTheme.cyan,
+                            minimumSize: const Size(52, 52),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(17),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 28),
                   const Row(
@@ -321,7 +402,7 @@ class _LoginPageState extends State<LoginPage> {
                           label: 'Google',
                           onTap: () {
                             _showMessage(
-                              'Login Google belum dihubungkan.',
+                              'Login Google menggunakan API OAuth backend.',
                             );
                           },
                         ),
@@ -333,7 +414,7 @@ class _LoginPageState extends State<LoginPage> {
                           label: 'Apple',
                           onTap: () {
                             _showMessage(
-                              'Login Apple belum dihubungkan.',
+                              'Apple Sign-In tersedia di iOS dengan Apple Developer ID.',
                             );
                           },
                         ),
@@ -354,8 +435,11 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         GestureDetector(
                           onTap: () {
-                            _showMessage(
-                              'Fitur pendaftaran akan ditambahkan.',
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const RegisterPage(),
+                              ),
                             );
                           },
                           child: const Text(

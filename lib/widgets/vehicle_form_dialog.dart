@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 import '../models/vehicle.dart';
@@ -24,6 +23,7 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
   late final TextEditingController _yearController;
   late final TextEditingController _plateController;
   late final TextEditingController _mileageController;
+  late final TextEditingController _fuelController;
 
   @override
   void initState() {
@@ -38,13 +38,16 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
       text: vehicle?.brand ?? '',
     );
     _yearController = TextEditingController(
-      text: vehicle?.year.toString() ?? '',
+      text: vehicle != null ? vehicle.year.toString() : '',
     );
     _plateController = TextEditingController(
       text: vehicle?.plate ?? '',
     );
     _mileageController = TextEditingController(
-      text: vehicle?.mileage.toString() ?? '',
+      text: vehicle != null ? vehicle.mileage.toString() : '',
+    );
+    _fuelController = TextEditingController(
+      text: vehicle != null ? vehicle.fuelLevel.toString() : '65',
     );
   }
 
@@ -55,6 +58,7 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
     _yearController.dispose();
     _plateController.dispose();
     _mileageController.dispose();
+    _fuelController.dispose();
 
     super.dispose();
   }
@@ -100,12 +104,20 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
   void _saveVehicle() {
     if (!_formKey.currentState!.validate()) return;
 
+    final fuel = int.tryParse(_fuelController.text.trim()) ?? 65;
+
     final vehicle = Vehicle(
+      id: widget.vehicle?.id,
       name: _nameController.text.trim(),
       brand: _brandController.text.trim(),
       year: int.parse(_yearController.text.trim()),
       plate: _plateController.text.trim().toUpperCase(),
       mileage: int.parse(_mileageController.text.trim()),
+      fuelLevel: fuel.clamp(0, 100),
+      status: widget.vehicle?.status ?? 'Dalam kondisi baik',
+      isPrimary: widget.vehicle?.isPrimary ?? false,
+      lastServiceDate: widget.vehicle?.lastServiceDate ?? 'Belum ada data',
+      taxDueDate: widget.vehicle?.taxDueDate ?? '12 Jul 2026',
     );
 
     Navigator.of(context).pop(vehicle);
@@ -163,7 +175,7 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
                 _buildTextField(
                   controller: _plateController,
                   label: 'Nomor polisi',
-                  hint: 'Contoh: B 1234 XYZ',
+                  hint: 'Contoh: B 1234 KZ',
                   icon: Icons.pin_outlined,
                   validator: (value) =>
                       _requiredValidator(value, 'Nomor polisi'),
@@ -176,6 +188,22 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
                   icon: Icons.speed_outlined,
                   numberOnly: true,
                   validator: _mileageValidator,
+                ),
+                const SizedBox(height: 14),
+                _buildTextField(
+                  controller: _fuelController,
+                  label: 'Perkiraan Bahan Bakar (%)',
+                  hint: 'Contoh: 65',
+                  icon: Icons.local_gas_station_outlined,
+                  numberOnly: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) return null;
+                    final val = int.tryParse(value.trim());
+                    if (val == null || val < 0 || val > 100) {
+                      return 'Nilai harus antara 0 - 100%';
+                    }
+                    return null;
+                  },
                 ),
               ],
             ),
