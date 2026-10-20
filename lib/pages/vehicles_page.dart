@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/vehicle.dart';
 import '../theme/app_theme.dart';
+import '../widgets/vehicle_form_dialog.dart';
 
 class VehiclesPage extends StatefulWidget {
   const VehiclesPage({super.key});
@@ -29,139 +30,29 @@ class _VehiclesPageState extends State<VehiclesPage> {
     ),
   ];
 
+  String _searchQuery = '';
+
+  List<Vehicle> get _filteredVehicles {
+    final query = _searchQuery.trim().toLowerCase();
+
+    if (query.isEmpty) {
+      return _vehicles;
+    }
+
+    return _vehicles.where((vehicle) {
+      return vehicle.name.toLowerCase().contains(query) ||
+          vehicle.brand.toLowerCase().contains(query) ||
+          vehicle.plate.toLowerCase().contains(query) ||
+          vehicle.year.toString().contains(query);
+    }).toList();
+  }
+
   Future<void> _openForm({Vehicle? vehicle}) async {
-    final formKey = GlobalKey<FormState>();
-
-    final nameController =
-        TextEditingController(text: vehicle?.name ?? '');
-    final brandController =
-        TextEditingController(text: vehicle?.brand ?? '');
-    final yearController = TextEditingController(
-      text: vehicle?.year.toString() ?? '',
-    );
-    final plateController =
-        TextEditingController(text: vehicle?.plate ?? '');
-    final mileageController = TextEditingController(
-      text: vehicle?.mileage.toString() ?? '',
-    );
-
     final result = await showDialog<Vehicle>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(
-            vehicle == null
-                ? 'Tambah Kendaraan'
-                : 'Edit Kendaraan',
-          ),
-          content: SizedBox(
-            width: 360,
-            child: Form(
-              key: formKey,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildTextField(
-                      controller: nameController,
-                      label: 'Nama kendaraan',
-                    ),
-                    _buildTextField(
-                      controller: brandController,
-                      label: 'Merek kendaraan',
-                    ),
-                    _buildTextField(
-                      controller: yearController,
-                      label: 'Tahun kendaraan',
-                      numberOnly: true,
-                    ),
-                    _buildTextField(
-                      controller: plateController,
-                      label: 'Nomor polisi',
-                    ),
-                    _buildTextField(
-                      controller: mileageController,
-                      label: 'Jarak tempuh (km)',
-                      numberOnly: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Batal'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (!formKey.currentState!.validate()) {
-                  return;
-                }
-
-                final year = int.tryParse(
-                  yearController.text.trim(),
-                );
-                final mileage = int.tryParse(
-                  mileageController.text.trim(),
-                );
-
-                if (year == null ||
-                    year < 1886 ||
-                    year > DateTime.now().year + 1) {
-                  ScaffoldMessenger.of(dialogContext)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Tahun kendaraan tidak valid.',
-                        ),
-                      ),
-                    );
-                  return;
-                }
-
-                if (mileage == null || mileage < 0) {
-                  ScaffoldMessenger.of(dialogContext)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Jarak tempuh tidak valid.',
-                        ),
-                      ),
-                    );
-                  return;
-                }
-
-                Navigator.pop(
-                  dialogContext,
-                  Vehicle(
-                    name: nameController.text.trim(),
-                    brand: brandController.text.trim(),
-                    year: year,
-                    plate: plateController.text
-                        .trim()
-                        .toUpperCase(),
-                    mileage: mileage,
-                  ),
-                );
-              },
-              child: const Text('Simpan'),
-            ),
-          ],
-        );
-      },
+      barrierDismissible: false,
+      builder: (_) => VehicleFormDialog(vehicle: vehicle),
     );
-
-    nameController.dispose();
-    brandController.dispose();
-    yearController.dispose();
-    plateController.dispose();
-    mileageController.dispose();
 
     if (!mounted || result == null) return;
 
@@ -177,56 +68,18 @@ class _VehiclesPageState extends State<VehiclesPage> {
       }
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          vehicle == null
-              ? 'Kendaraan berhasil ditambahkan.'
-              : 'Kendaraan berhasil diperbarui.',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    bool numberOnly = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: numberOnly
-            ? TextInputType.number
-            : TextInputType.text,
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            vehicle == null
+                ? 'Kendaraan berhasil ditambahkan.'
+                : 'Kendaraan berhasil diperbarui.',
           ),
+          behavior: SnackBarBehavior.floating,
         ),
-        validator: (value) {
-          if (value == null || value.trim().isEmpty) {
-            return '$label wajib diisi.';
-          }
-
-          if (numberOnly) {
-            final number = int.tryParse(value.trim());
-
-            if (number == null) {
-              return 'Masukkan angka yang valid.';
-            }
-
-            if (number < 0) {
-              return 'Angka tidak boleh negatif.';
-            }
-          }
-
-          return null;
-        },
-      ),
-    );
+      );
   }
 
   Future<void> _deleteVehicle(Vehicle vehicle) async {
@@ -236,23 +89,19 @@ class _VehiclesPageState extends State<VehiclesPage> {
         return AlertDialog(
           title: const Text('Hapus Kendaraan'),
           content: Text(
-            'Yakin ingin menghapus ${vehicle.brand} '
-            '${vehicle.name}?',
+            'Apakah Anda yakin ingin menghapus '
+            '${vehicle.brand} ${vehicle.name}?',
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Batal'),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.danger,
               ),
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
+              onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Hapus'),
             ),
           ],
@@ -260,105 +109,293 @@ class _VehiclesPageState extends State<VehiclesPage> {
       },
     );
 
-    if (confirmed != true || !mounted) return;
+    if (!mounted || confirmed != true) return;
 
     setState(() {
       _vehicles.remove(vehicle);
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Kendaraan berhasil dihapus.'),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Kendaraan berhasil dihapus.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   @override
   Widget build(BuildContext context) {
+    final filteredVehicles = _filteredVehicles;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const Text(
-              'Kendaraan Saya',
-              style: TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: 25,
-                fontWeight: FontWeight.w800,
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                child: _buildHeader(),
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'Kelola kendaraan dan pantau kondisinya.',
-              style: TextStyle(
-                color: AppTheme.textSecondary,
-                fontSize: 13,
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _buildSummaryCard(),
               ),
             ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Daftar Kendaraan',
-                    style: TextStyle(
-                      color: AppTheme.textPrimary,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                FilledButton.icon(
-                  onPressed: () => _openForm(),
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Tambah'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
+                child: _buildSearchField(),
+              ),
             ),
-            const SizedBox(height: 14),
-            if (_vehicles.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Column(
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
                   children: [
-                    Icon(
-                      Icons.directions_car_outlined,
-                      size: 48,
-                      color: AppTheme.textSecondary,
-                    ),
-                    SizedBox(height: 12),
-                    Text(
-                      'Belum ada kendaraan.',
-                      style: TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontWeight: FontWeight.w700,
+                    const Expanded(
+                      child: Text(
+                        'Daftar Kendaraan',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.textPrimary,
+                        ),
                       ),
                     ),
-                    SizedBox(height: 5),
                     Text(
-                      'Tekan Tambah untuk memasukkan kendaraan.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
+                      '${filteredVehicles.length} kendaraan',
+                      style: const TextStyle(
                         fontSize: 12,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+            if (filteredVehicles.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _buildEmptyState(),
               )
             else
-              ..._vehicles.map(_vehicleCard),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final vehicle = filteredVehicles[index];
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: _vehicleCard(vehicle),
+                      );
+                    },
+                    childCount: filteredVehicles.length,
+                  ),
+                ),
+              ),
           ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openForm(),
+        backgroundColor: AppTheme.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text(
+          'Tambah Kendaraan',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(
+            Icons.directions_car_rounded,
+            color: AppTheme.primary,
+            size: 27,
+          ),
+        ),
+        const SizedBox(width: 13),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Kendaraan Saya',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 23,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.6,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Kelola kendaraan kesayanganmu',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCard() {
+    final totalMileage = _vehicles.fold<int>(
+      0,
+      (total, vehicle) => total + vehicle.mileage,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppTheme.navy, AppTheme.primary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.navy.withValues(alpha: 0.12),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Ringkasan Kendaraan',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _summaryItem(
+                  icon: Icons.directions_car_rounded,
+                  value: '${_vehicles.length}',
+                  label: 'Kendaraan',
+                ),
+              ),
+              Container(
+                width: 1,
+                height: 48,
+                color: Colors.white24,
+              ),
+              Expanded(
+                child: _summaryItem(
+                  icon: Icons.speed_rounded,
+                  value: _formatMileage(totalMileage),
+                  label: 'Total kilometer',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryItem({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: AppTheme.cyan, size: 25),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      onChanged: (value) {
+        setState(() {
+          _searchQuery = value;
+        });
+      },
+      decoration: InputDecoration(
+        hintText: 'Cari nama, merek, atau nomor polisi...',
+        hintStyle: const TextStyle(
+          fontSize: 12,
+          color: AppTheme.textSecondary,
+        ),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: AppTheme.textSecondary,
+        ),
+        filled: true,
+        fillColor: AppTheme.surface,
+        contentPadding: const EdgeInsets.symmetric(vertical: 15),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppTheme.textSecondary.withValues(alpha: 0.10),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: AppTheme.primary,
+            width: 1.3,
+          ),
         ),
       ),
     );
@@ -366,33 +403,41 @@ class _VehiclesPageState extends State<VehiclesPage> {
 
   Widget _vehicleCard(Vehicle vehicle) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: const Color(0xFFE7EDF6),
+          color: AppTheme.textSecondary.withValues(alpha: 0.08),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.navy.withValues(alpha: 0.035),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 52,
-                height: 52,
+                width: 58,
+                height: 58,
                 decoration: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
+                  color: AppTheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(17),
                 ),
                 child: const Icon(
                   Icons.directions_car_filled_rounded,
+                  size: 32,
                   color: AppTheme.primary,
-                  size: 28,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 13),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,23 +445,44 @@ class _VehiclesPageState extends State<VehiclesPage> {
                     Text(
                       '${vehicle.brand} ${vehicle.name}',
                       style: const TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
+                        color: AppTheme.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 5),
                     Text(
-                      '${vehicle.year} • ${vehicle.plate}',
+                      'Tahun ${vehicle.year}',
                       style: const TextStyle(
                         color: AppTheme.textSecondary,
-                        fontSize: 11,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.background,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        vehicle.plate,
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.7,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
               PopupMenuButton<String>(
+                tooltip: 'Menu kendaraan',
                 onSelected: (value) {
                   if (value == 'edit') {
                     _openForm(vehicle: vehicle);
@@ -424,28 +490,48 @@ class _VehiclesPageState extends State<VehiclesPage> {
                     _deleteVehicle(vehicle);
                   }
                 },
-                itemBuilder: (context) => const [
+                itemBuilder: (_) => const [
                   PopupMenuItem(
                     value: 'edit',
-                    child: Text('Edit kendaraan'),
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_outlined, size: 19),
+                        SizedBox(width: 10),
+                        Text('Edit kendaraan'),
+                      ],
+                    ),
                   ),
                   PopupMenuItem(
                     value: 'delete',
-                    child: Text('Hapus kendaraan'),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.delete_outline_rounded,
+                          color: AppTheme.danger,
+                          size: 19,
+                        ),
+                        SizedBox(width: 10),
+                        Text('Hapus kendaraan'),
+                      ],
+                    ),
                   ),
                 ],
+                icon: const Icon(
+                  Icons.more_vert_rounded,
+                  color: AppTheme.textSecondary,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: AppTheme.background),
           const SizedBox(height: 14),
           Row(
             children: [
               const Icon(
                 Icons.speed_rounded,
+                size: 18,
                 color: AppTheme.primary,
-                size: 19,
               ),
               const SizedBox(width: 8),
               const Expanded(
@@ -458,17 +544,123 @@ class _VehiclesPageState extends State<VehiclesPage> {
                 ),
               ),
               Text(
-                '${vehicle.mileage} km',
+                '${_formatMileage(vehicle.mileage)} km',
                 style: const TextStyle(
                   color: AppTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          Row(
+            children: [
+              const Icon(
+                Icons.build_circle_outlined,
+                size: 18,
+                color: AppTheme.success,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Status kendaraan',
+                  style: TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Terdaftar',
+                  style: TextStyle(
+                    color: AppTheme.success,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final isSearching = _searchQuery.trim().isNotEmpty;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 85,
+              height: 85,
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isSearching
+                    ? Icons.search_off_rounded
+                    : Icons.directions_car_outlined,
+                color: AppTheme.primary,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              isSearching
+                  ? 'Kendaraan tidak ditemukan'
+                  : 'Belum ada kendaraan',
+              style: const TextStyle(
+                color: AppTheme.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isSearching
+                  ? 'Coba gunakan kata kunci yang berbeda.'
+                  : 'Tambahkan kendaraan agar bisa dikelola di DriveMate.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+            if (!isSearching) ...[
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: () => _openForm(),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Tambah Kendaraan'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatMileage(int mileage) {
+    return mileage.toString().replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => '.',
     );
   }
 }
