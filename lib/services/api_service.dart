@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../api_config.dart';
 
 class ApiResponse<T> {
   ApiResponse({
@@ -22,7 +23,7 @@ class ApiService {
   static final ApiService instance = ApiService._internal();
 
   // Konfigurasi Base URL Backend (dapat disesuaikan dengan server nyata)
-  String baseUrl = 'https://api.drivemate.id/v1';
+  final String baseUrl = ApiConfig.baseUrl;
   final Duration timeoutDuration = const Duration(seconds: 10);
 
   Map<String, String> _headers({String? token}) {
