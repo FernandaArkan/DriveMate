@@ -3,7 +3,9 @@ import '../models/user_profile.dart';
 import '../repositories/user_repository.dart';
 import '../services/biometric_service.dart';
 import '../theme/app_theme.dart';
+import 'activity_history_page.dart';
 import 'game_page.dart';
+import 'settings_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, this.onNavigateTab});
@@ -432,11 +434,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     icon: Icons.settings_outlined,
                     title: 'Pengaturan',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tema: Light (Default) • Bahasa: Indonesia'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsPage()),
                       );
                     },
                   ),
@@ -451,11 +451,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     icon: Icons.history_rounded,
                     title: 'Riwayat Aktivitas',
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Sesi login aktif. Penyimpanan database lokal terhubung.'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ActivityHistoryPage()),
                       );
                     },
                   ),

@@ -1,9 +1,21 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/database_helper.dart';
 import '../models/user_profile.dart';
+import '../services/api_service.dart';
+
+class AuthResult {
+  const AuthResult({
+    required this.isSuccess,
+    this.message,
+    this.user,
+  });
+
+  final bool isSuccess;
+  final String? message;
+  final UserProfile? user;
+}
 
 class UserRepository extends ChangeNotifier {
   UserRepository._internal();
@@ -28,14 +40,33 @@ class UserRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // PEMULIHAN SEMENTARA AKUN CONTOH ANDI.
-      // Hapus pemanggilan ini setelah akun berhasil dipulihkan.
-      await restoreSampleAccount();
-
       final prefs = await SharedPreferences.getInstance();
-
       _isLoggedIn = prefs.getBool(_keyIsLoggedIn) ?? false;
-      _currentUser = await _dbHelper.getUserProfile();
+      final savedEmail = prefs.getString(_keyUserEmail);
+
+      final db = await _dbHelper.database;
+      final countResult = await db.query('user_profile');
+
+      // Jika database lokal benar-benar kosong, buat akun awal contoh
+      if (countResult.isEmpty) {
+        await restoreSampleAccount();
+      }
+
+      if (_isLoggedIn && savedEmail != null && savedEmail.isNotEmpty) {
+        final matches = await db.query(
+          'user_profile',
+          where: 'LOWER(email) = ?',
+          whereArgs: [savedEmail.trim().toLowerCase()],
+          limit: 1,
+        );
+        if (matches.isNotEmpty) {
+          _currentUser = UserProfile.fromMap(
+            Map<String, dynamic>.from(matches.first),
+          );
+        }
+      }
+
+      _currentUser ??= await _dbHelper.getUserProfile();
 
       if (_currentUser == null) {
         _isLoggedIn = false;
@@ -54,32 +85,34 @@ class UserRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final user = await _dbHelper.getUserProfile();
+      final db = await _dbHelper.database;
+      final input = identifier.trim().toLowerCase();
 
-      if (user == null) {
-        debugPrint('Login gagal: profil tidak ditemukan.');
+      final matches = await db.query(
+        'user_profile',
+        where: 'LOWER(email) = ? OR phone = ?',
+        whereArgs: [input, identifier.trim()],
+      );
+
+      if (matches.isEmpty) {
+        debugPrint('Login gagal: akun tidak ditemukan.');
         return false;
       }
 
-      final input = identifier.trim();
+      for (final map in matches) {
+        final user = UserProfile.fromMap(Map<String, dynamic>.from(map));
+        if (user.passwordHash == password) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(_keyIsLoggedIn, true);
+          await prefs.setString(_keyUserEmail, user.email);
 
-      final emailMatches =
-          user.email.trim().toLowerCase() == input.toLowerCase();
-      final phoneMatches = user.phone.trim() == input;
-      final passwordMatches = user.passwordHash == password;
-
-      if ((emailMatches || phoneMatches) && passwordMatches) {
-        final prefs = await SharedPreferences.getInstance();
-
-        await prefs.setBool(_keyIsLoggedIn, true);
-        await prefs.setString(_keyUserEmail, user.email);
-
-        _currentUser = user;
-        _isLoggedIn = true;
-        return true;
+          _currentUser = user;
+          _isLoggedIn = true;
+          return true;
+        }
       }
 
-      debugPrint('Login gagal: email/nomor telepon atau password salah.');
+      debugPrint('Login gagal: password salah.');
       return false;
     } catch (e) {
       debugPrint('Error login: $e');
@@ -90,7 +123,7 @@ class UserRepository extends ChangeNotifier {
     }
   }
 
-  Future<bool> register({
+  Future<AuthResult> register({
     required String name,
     required String email,
     required String phone,
@@ -100,44 +133,91 @@ class UserRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final cleanEmail = email.trim().toLowerCase();
+      final cleanPhone = phone.trim();
+      final cleanName = name.trim();
+
       final db = await _dbHelper.database;
 
-      final existing = await db.query(
+      // 1. Validasi duplikasi lokal
+      final existingEmail = await db.query(
         'user_profile',
+        where: 'LOWER(email) = ?',
+        whereArgs: [cleanEmail],
         limit: 1,
       );
 
-      // Jangan menimpa profil yang sudah ada.
-      if (existing.isNotEmpty) {
-        debugPrint(
-          'Pendaftaran dibatalkan: profil sudah ada. '
-          'Database saat ini hanya mendukung satu profil.',
+      if (existingEmail.isNotEmpty) {
+        return const AuthResult(
+          isSuccess: false,
+          message: 'Email sudah terdaftar. Silakan login atau gunakan email lain.',
         );
-        return false;
       }
 
-      final newUser = UserProfile(
-        id: 1,
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        passwordHash: password,
-        token:
-            'drivemate_jwt_${DateTime.now().millisecondsSinceEpoch}',
+      // 2. Kirim request registrasi ke Backend API
+      final apiResponse = await ApiService.instance.post(
+        '/api/register.php',
+        body: {
+          'name': cleanName,
+          'email': cleanEmail,
+          'phone': cleanPhone,
+          'password': password,
+        },
       );
 
-      await db.insert('user_profile', newUser.toMap());
+      // Jika server backend merespons berhasil
+      if (apiResponse.isSuccess) {
+        int newId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        String? token;
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_keyIsLoggedIn, true);
-      await prefs.setString(_keyUserEmail, newUser.email);
+        if (apiResponse.data != null && apiResponse.data is Map) {
+          final resData = apiResponse.data as Map<String, dynamic>;
+          final userData = resData['data'] is Map ? resData['data'] as Map<String, dynamic> : null;
+          if (userData != null && userData['id'] != null) {
+            newId = int.tryParse(userData['id'].toString()) ?? newId;
+          }
+          token = resData['token']?.toString() ?? userData?['token']?.toString();
+        }
 
-      _currentUser = newUser;
-      _isLoggedIn = true;
-      return true;
+        token ??= 'drivemate_jwt_${DateTime.now().millisecondsSinceEpoch}';
+
+        final newUser = UserProfile(
+          id: newId,
+          name: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          passwordHash: password,
+          token: token,
+        );
+
+        await db.insert('user_profile', newUser.toMap());
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_keyIsLoggedIn, true);
+        await prefs.setString(_keyUserEmail, newUser.email);
+
+        _currentUser = newUser;
+        _isLoggedIn = true;
+
+        return AuthResult(
+          isSuccess: true,
+          message: 'Pendaftaran berhasil dikonfirmasi oleh server! Selamat datang di DriveMate.',
+          user: newUser,
+        );
+      } else {
+        // Server mengembalikan error atau koneksi gagal
+        final errMsg = apiResponse.message ?? 'Server backend menolak registrasi.';
+        return AuthResult(
+          isSuccess: false,
+          message: 'Registrasi ke server gagal: $errMsg',
+        );
+      }
     } catch (e) {
       debugPrint('Error register: $e');
-      return false;
+      return AuthResult(
+        isSuccess: false,
+        message: 'Terjadi kesalahan sistem saat registrasi: $e',
+      );
     } finally {
       _isLoading = false;
       notifyListeners();

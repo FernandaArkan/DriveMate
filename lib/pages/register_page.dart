@@ -36,7 +36,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _isLoading = true);
 
-    final success = await UserRepository.instance.register(
+    final result = await UserRepository.instance.register(
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
       phone: _phoneController.text.trim(),
@@ -46,19 +46,22 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (success) {
+    if (result.isSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pendaftaran berhasil! Selamat datang di DriveMate.'),
+        SnackBar(
+          content: Text(result.message ?? 'Pendaftaran berhasil!'),
           backgroundColor: AppTheme.success,
+          behavior: SnackBarBehavior.floating,
         ),
       );
       Navigator.pushReplacementNamed(context, '/home');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pendaftaran gagal. Silakan coba kembali.'),
+        SnackBar(
+          content: Text(result.message ?? 'Pendaftaran gagal. Silakan coba kembali.'),
           backgroundColor: AppTheme.danger,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -170,7 +173,11 @@ class _RegisterPageState extends State<RegisterPage> {
                       hint: 'Nama Lengkap',
                       icon: Icons.person_outline_rounded,
                     ),
-                    validator: (v) => v == null || v.trim().isEmpty ? 'Nama lengkap wajib diisi' : null,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Nama lengkap wajib diisi';
+                      if (v.trim().length < 3) return 'Nama lengkap minimal 3 karakter';
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 14),
 
@@ -180,12 +187,13 @@ class _RegisterPageState extends State<RegisterPage> {
                     keyboardType: TextInputType.emailAddress,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _inputDecoration(
-                      hint: 'Email Aktif',
+                      hint: 'Email Aktif (contoh: user@email.com)',
                       icon: Icons.mail_outline_rounded,
                     ),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Email wajib diisi';
-                      if (!v.contains('@') || !v.contains('.')) return 'Format email tidak valid';
+                      final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+                      if (!emailRegex.hasMatch(v.trim())) return 'Format email tidak valid (contoh: nama@domain.com)';
                       return null;
                     },
                   ),
@@ -197,10 +205,17 @@ class _RegisterPageState extends State<RegisterPage> {
                     keyboardType: TextInputType.phone,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _inputDecoration(
-                      hint: 'Nomor HP (WhatsApp)',
+                      hint: 'Nomor HP (WhatsApp, contoh: 081234567890)',
                       icon: Icons.phone_outlined,
                     ),
-                    validator: (v) => v == null || v.trim().length < 9 ? 'Nomor HP minimal 9 digit' : null,
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Nomor HP wajib diisi';
+                      final digitsOnly = v.trim().replaceAll(RegExp(r'\D'), '');
+                      if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+                        return 'Nomor HP harus berupa 10-15 digit angka';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 14),
 
@@ -221,7 +236,11 @@ class _RegisterPageState extends State<RegisterPage> {
                         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                       ),
                     ),
-                    validator: (v) => v == null || v.length < 6 ? 'Password minimal 6 karakter' : null,
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Password wajib diisi';
+                      if (v.length < 6) return 'Password minimal 6 karakter';
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 14),
 
@@ -243,7 +262,8 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                     validator: (v) {
-                      if (v != _passwordController.text) return 'Password tidak cocok';
+                      if (v == null || v.isEmpty) return 'Konfirmasi password wajib diisi';
+                      if (v != _passwordController.text) return 'Konfirmasi password tidak cocok';
                       return null;
                     },
                   ),

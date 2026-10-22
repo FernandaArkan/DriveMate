@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../database/database_helper.dart';
+import '../models/reminder_item.dart';
 import '../models/vehicle.dart';
 import '../repositories/user_repository.dart';
 import '../repositories/vehicle_repository.dart';
@@ -22,13 +24,23 @@ class _HomePageState extends State<HomePage> {
   final VehicleRepository _vehicleRepo = VehicleRepository.instance;
   final UserRepository _userRepo = UserRepository.instance;
 
+  int _totalServices = 0;
+  int _activeRemindersCount = 0;
+  List<ReminderItem> _activeReminders = [];
+  bool _isLoadingSummary = false;
+
   @override
   void initState() {
     super.initState();
     _vehicleRepo.addListener(_onDataUpdated);
     _userRepo.addListener(_onDataUpdated);
-    _vehicleRepo.loadVehicles();
-    _userRepo.initSession();
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    await _userRepo.initSession();
+    await _vehicleRepo.loadVehicles();
+    await _loadSummaryData();
   }
 
   @override
@@ -39,7 +51,39 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onDataUpdated() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      _loadSummaryData();
+    }
+  }
+
+  Future<void> _loadSummaryData() async {
+    if (!mounted) return;
+    setState(() => _isLoadingSummary = true);
+
+    try {
+      final db = DatabaseHelper.instance;
+      final vehicle = _vehicleRepo.primaryVehicle ??
+          (_vehicleRepo.vehicles.isNotEmpty ? _vehicleRepo.vehicles.first : null);
+
+      final services = await db.getServiceRecords(vehicleId: vehicle?.id);
+      final allReminders = await db.getReminders();
+      final active = allReminders.where((r) => !r.isRead).toList();
+
+      if (mounted) {
+        setState(() {
+          _totalServices = services.length;
+          _activeRemindersCount = active.length;
+          _activeReminders = active.take(2).toList();
+          _isLoadingSummary = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading summary data: $e');
+      if (mounted) {
+        setState(() => _isLoadingSummary = false);
+      }
+    }
   }
 
   @override
@@ -47,7 +91,9 @@ class _HomePageState extends State<HomePage> {
     final vehicle = _vehicleRepo.primaryVehicle ??
         (_vehicleRepo.vehicles.isNotEmpty ? _vehicleRepo.vehicles.first : null);
     final user = _userRepo.currentUser;
-    final userName = user != null ? user.name.split(' ').first : 'Andi';
+    final userName = user != null && user.name.isNotEmpty
+        ? user.name.split(' ').first
+        : 'Pengguna';
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -72,7 +118,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 5),
                       const Text(
-                        'Selamat datang kembali!',
+                        'Selamat datang kembali di DriveMate!',
                         style: TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 12,
@@ -131,7 +177,7 @@ class _HomePageState extends State<HomePage> {
                         MaterialPageRoute(
                           builder: (_) => ServiceHistoryPage(initialVehicle: vehicle),
                         ),
-                      );
+                      ).then((_) => _loadSummaryData());
                     },
                   ),
                 ),
@@ -176,7 +222,7 @@ class _HomePageState extends State<HomePage> {
 
             const SizedBox(height: 28),
 
-            // PENGINGAT (Mockup Layar 3)
+            // PENGINGAT (Dinamis dari Database)
             SectionHeader(
               title: 'Pengingat',
               actionLabel: 'Lihat Semua',
@@ -186,49 +232,87 @@ class _HomePageState extends State<HomePage> {
                   MaterialPageRoute(
                     builder: (_) => const NotificationsPage(),
                   ),
-                );
+                ).then((_) => _loadSummaryData());
               },
             ),
 
             const SizedBox(height: 12),
 
-            _ReminderCard(
-              icon: Icons.build_circle_rounded,
-              color: const Color(0xFF20B486),
-              title: 'Servis Berkala',
-              description: 'Dalam 2.500 km lagi',
-              detail: '${_formatMileage(vehicle?.mileage ?? 12450)} km / 15.000 km',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ServiceHistoryPage(initialVehicle: vehicle),
+            if (_isLoadingSummary)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+              )
+            else if (_activeReminders.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(19),
+                  border: Border.all(color: const Color(0xFFE8EDF5)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: AppTheme.success,
+                      size: 26,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Tidak ada pengingat aktif saat ini. Semua jadwal servis & pajak terpantau aman.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ..._activeReminders.map((reminder) {
+                IconData remIcon = Icons.notifications_active_rounded;
+                Color remColor = AppTheme.primary;
+                if (reminder.category.toLowerCase().contains('servis')) {
+                  remIcon = Icons.build_circle_rounded;
+                  remColor = const Color(0xFF20B486);
+                } else if (reminder.category.toLowerCase().contains('pajak')) {
+                  remIcon = Icons.receipt_long_rounded;
+                  remColor = const Color(0xFFFFA53D);
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _ReminderCard(
+                    icon: remIcon,
+                    color: remColor,
+                    title: reminder.title,
+                    description: reminder.message,
+                    detail: reminder.targetDate != null
+                        ? 'Jatuh tempo: ${reminder.targetDate}'
+                        : (reminder.targetMileage != null
+                            ? 'Target: ${_formatMileage(reminder.targetMileage!)} km'
+                            : reminder.timeAgo),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationsPage(),
+                        ),
+                      ).then((_) => _loadSummaryData());
+                    },
                   ),
                 );
-              },
-            ),
+              }),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
 
-            _ReminderCard(
-              icon: Icons.receipt_long_rounded,
-              color: const Color(0xFFFFA53D),
-              title: 'Pajak Kendaraan',
-              description: 'Jatuh tempo ${vehicle?.taxDueDate ?? "12 Jul 2026"}',
-              detail: 'Pastikan pajak dibayar tepat waktu',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const NotificationsPage(),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 26),
-
-            // RINGKASAN KENDARAAN (Mockup Layar 3)
+            // RINGKASAN KENDARAAN (Dinamis Aktual)
             const SectionHeader(title: 'Ringkasan Kendaraan'),
             const SizedBox(height: 12),
 
@@ -236,18 +320,33 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Expanded(
                   child: _SummaryCard(
+                    icon: Icons.directions_car_outlined,
+                    label: 'Total Kendaraan',
+                    value: _vehicleRepo.isLoading
+                        ? '...'
+                        : '${_vehicleRepo.vehicles.length} unit',
+                    color: AppTheme.cyan,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _SummaryCard(
                     icon: Icons.build_outlined,
                     label: 'Total Servis',
-                    value: '4 kali',
+                    value: _isLoadingSummary
+                        ? '...'
+                        : '$_totalServices kali',
                     color: AppTheme.primary,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: _SummaryCard(
                     icon: Icons.notifications_active_outlined,
                     label: 'Pengingat Aktif',
-                    value: '2',
+                    value: _isLoadingSummary
+                        ? '...'
+                        : '$_activeRemindersCount',
                     color: AppTheme.success,
                   ),
                 ),
@@ -260,13 +359,78 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildVehicleCard(Vehicle? vehicle) {
-    final title = vehicle != null
-        ? '${vehicle.brand} ${vehicle.name} ${vehicle.year}'
-        : 'Honda Civic 2022';
-    final plate = vehicle?.plate ?? 'B 1234 KZ';
-    final mileageStr = '${_formatMileage(vehicle?.mileage ?? 12450)} km';
-    final fuelStr = '${vehicle?.fuelLevel ?? 65}%';
-    final statusStr = vehicle?.status ?? 'Dalam kondisi baik';
+    if (vehicle == null) {
+      return Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF254C7C),
+              Color(0xFF102B4A),
+              Color(0xFF071D32),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.navy.withValues(alpha: 0.17),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            const Icon(
+              Icons.directions_car_filled_rounded,
+              color: AppTheme.cyan,
+              size: 46,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Belum Ada Kendaraan',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Tambahkan kendaraan untuk mulai memantau servis, jarak tempuh, dan pajak.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFFBFD7F1),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: () {
+                if (widget.onNavigateTab != null) {
+                  widget.onNavigateTab!(1); // Tab Kendaraan
+                }
+              },
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Tambah Kendaraan'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final title = '${vehicle.brand} ${vehicle.name} ${vehicle.year}';
+    final plate = vehicle.plate;
+    final mileageStr = '${_formatMileage(vehicle.mileage)} km';
+    final fuelStr = '${vehicle.fuelLevel}%';
+    final statusStr = vehicle.status.isNotEmpty ? vehicle.status : 'Dalam kondisi baik';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -641,10 +805,10 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(19),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: const Color(0xFFE8EDF5),
         ),
@@ -652,21 +816,25 @@ class _SummaryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 13),
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 10),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppTheme.textSecondary,
-              fontSize: 11,
+              fontSize: 10,
             ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 4),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppTheme.textPrimary,
-              fontSize: 17,
+              fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
           ),
