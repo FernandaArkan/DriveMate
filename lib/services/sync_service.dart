@@ -53,13 +53,10 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final db = await DatabaseHelper.instance.database;
-      final unsynced = await db.query('vehicles', where: 'isSynced = ?', whereArgs: [0]);
-
-      if (unsynced.isNotEmpty) {
-        // Simulasi pengiriman data tertunda ke cloud
-        await Future.delayed(const Duration(seconds: 1));
-        await db.update('vehicles', {'isSynced': 1}, where: 'isSynced = ?', whereArgs: [0]);
+      // Kirim seluruh data kendaraan yang belum tersinkron ke cloud backend
+      final syncedCount = await DatabaseHelper.instance.syncPendingVehicles();
+      if (syncedCount > 0) {
+        debugPrint('Sync pending vehicles berhasil: $syncedCount unit.');
       }
 
       _syncStatusMessage = 'Online • Data tersinkron';

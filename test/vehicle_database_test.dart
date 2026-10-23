@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:drivemate/models/vehicle.dart';
 import 'package:drivemate/models/service_record.dart';
+import 'package:drivemate/database/database_helper.dart';
 
 void main() {
   setUpAll(() {
@@ -81,6 +82,15 @@ void main() {
       );
 
       expect(tamperedRec.verifyHash(), false); // Terdeteksi rusak
+    });
+
+    test('DatabaseHelper service records and blockchain verification works', () async {
+      final dbHelper = DatabaseHelper.instance;
+      final records = await dbHelper.getServiceRecords();
+      expect(records.isNotEmpty, true);
+
+      final integrity = await dbHelper.verifyBlockchainIntegrity();
+      expect(integrity, true);
     });
   });
 }

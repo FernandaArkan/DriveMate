@@ -57,3 +57,7 @@ api/config.local.php
 
 # Local Android SDK configuration
 /android/local.properties
+
+drivemate_pure/
+
+/router.php

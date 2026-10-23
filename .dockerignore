@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+api/.env
+api/.env.*
+!api/.env.example
+.git
+.gitignore

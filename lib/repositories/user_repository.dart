@@ -85,13 +85,74 @@ class UserRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final cleanIdentifier = identifier.trim();
       final db = await _dbHelper.database;
-      final input = identifier.trim().toLowerCase();
 
+      // 1. Coba login ke Backend API jika online
+      try {
+        final apiResponse = await ApiService.instance.post(
+          '/api/login.php',
+          body: {
+            'identifier': cleanIdentifier,
+            'password': password,
+          },
+        );
+
+        if (apiResponse.isSuccess && apiResponse.data != null) {
+          final resData = apiResponse.data!;
+          final userData = resData['data'] is Map ? resData['data'] as Map<String, dynamic> : null;
+          final token = resData['token']?.toString() ?? userData?['token']?.toString() ?? 'token_${DateTime.now().millisecondsSinceEpoch}';
+
+          final userId = userData != null && userData['id'] != null
+              ? int.tryParse(userData['id'].toString()) ?? 1
+              : 1;
+          final name = userData?['name']?.toString() ?? 'User';
+          final email = userData?['email']?.toString() ?? cleanIdentifier;
+          final phone = userData?['phone']?.toString() ?? '';
+
+          final user = UserProfile(
+            id: userId,
+            name: name,
+            email: email,
+            phone: phone,
+            passwordHash: password,
+            token: token,
+          );
+
+          final existing = await db.query(
+            'user_profile',
+            where: 'id = ? OR LOWER(email) = ?',
+            whereArgs: [user.id, user.email.toLowerCase()],
+            limit: 1,
+          );
+
+          if ((existing as List).isEmpty) {
+            await db.insert('user_profile', user.toMap());
+          } else {
+            await db.update('user_profile', user.toMap(), where: 'id = ?', whereArgs: [user.id]);
+          }
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(_keyIsLoggedIn, true);
+          await prefs.setString(_keyUserEmail, user.email);
+
+          _currentUser = user;
+          _isLoggedIn = true;
+          return true;
+        } else if (apiResponse.statusCode == 401) {
+          debugPrint('Login ditolak server: ${apiResponse.message}');
+          return false;
+        }
+      } catch (netErr) {
+        debugPrint('Backend tidak dapat dijangkau ($netErr), beralih ke verifikasi lokal.');
+      }
+
+      // 2. Fallback verifikasi lokal SQLite
+      final input = cleanIdentifier.toLowerCase();
       final matches = await db.query(
         'user_profile',
         where: 'LOWER(email) = ? OR phone = ?',
-        whereArgs: [input, identifier.trim()],
+        whereArgs: [input, cleanIdentifier],
       );
 
       if (matches.isEmpty) {

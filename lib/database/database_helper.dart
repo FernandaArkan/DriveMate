@@ -11,6 +11,8 @@ import '../models/trip_record.dart';
 import '../models/user_profile.dart';
 import '../models/vehicle.dart';
 import 'platform_init.dart';
+import '../services/api_service.dart';
+
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -280,40 +282,91 @@ class DatabaseHelper {
     });
   }
 
-  // === VEHICLE CRUD ===
+    // === VEHICLE CRUD & SYNC ===
+
+  // Mengambil kendaraan dari database lokal dan menyinkronkan dengan backend API jika online.
   Future<List<Vehicle>> getVehicles() async {
     final db = await database;
-    final maps = await db.query('vehicles', orderBy: 'isPrimary DESC, id ASC');
-    return (maps as List)
-        .map((map) => Vehicle.fromMap(Map<String, dynamic>.from(map)))
+    final localMaps = await db.query('vehicles', orderBy: 'isPrimary DESC, id ASC');
+    List<Vehicle> list = (localMaps as List)
+        .map((m) => Vehicle.fromMap(Map<String, dynamic>.from(m)))
         .toList();
-  }
 
-  Future<Vehicle?> getPrimaryVehicle() async {
-    final db = await database;
-    final maps = await db.query(
-      'vehicles',
-      where: 'isPrimary = ?',
-      whereArgs: [1],
-      limit: 1,
-    );
-    if ((maps as List).isNotEmpty) {
-      return Vehicle.fromMap(Map<String, dynamic>.from(maps.first));
+    try {
+      final remoteList = await ApiService.instance.getVehicles(userId: 1);
+      if (remoteList.isNotEmpty) {
+        for (final rv in remoteList) {
+          final existing = await db.query('vehicles', where: 'id = ?', whereArgs: [rv.id], limit: 1);
+          if ((existing as List).isEmpty) {
+            await db.insert('vehicles', rv.toMap());
+          } else {
+            await db.update('vehicles', rv.toMap(), where: 'id = ?', whereArgs: [rv.id]);
+          }
+        }
+        final updatedMaps = await db.query('vehicles', orderBy: 'isPrimary DESC, id ASC');
+        list = (updatedMaps as List)
+            .map((m) => Vehicle.fromMap(Map<String, dynamic>.from(m)))
+            .toList();
+      }
+    } catch (_) {
+      // Mode offline: gunakan data lokal
     }
-    final all = await getVehicles();
-    return all.isNotEmpty ? all.first : null;
+
+    list.sort((a, b) {
+      if (a.isPrimary != b.isPrimary) {
+        return a.isPrimary ? -1 : 1;
+      }
+      return (a.id ?? 0).compareTo(b.id ?? 0);
+    });
+
+    return list;
   }
 
+  // Mengambil kendaraan utama
+  Future<Vehicle?> getPrimaryVehicle() async {
+    final vehicles = await getVehicles();
+    if (vehicles.isEmpty) return null;
+    for (final vehicle in vehicles) {
+      if (vehicle.isPrimary) return vehicle;
+    }
+    return vehicles.first;
+  }
+
+  // Menambahkan kendaraan secara offline-first dan sync ke backend jika online
   Future<int> insertVehicle(Vehicle vehicle) async {
     final db = await database;
     if (vehicle.isPrimary) {
       await db.update('vehicles', {'isPrimary': 0});
     }
-    return await db.insert('vehicles', vehicle.toMap());
+
+    final localMap = vehicle.toMap();
+    localMap['isSynced'] = 0;
+    final localId = await db.insert('vehicles', localMap);
+
+    try {
+      final remoteVehicle = await ApiService.instance.addVehicle(
+        vehicle: vehicle,
+        userId: 1,
+      );
+      if (remoteVehicle.id != null) {
+        await db.update(
+          'vehicles',
+          {'isSynced': 1},
+          where: 'id = ?',
+          whereArgs: [localId],
+        );
+      }
+    } catch (e) {
+      debugPrint('insertVehicle disimpan lokal (offline): $e');
+    }
+
+    return localId;
   }
 
+  // Memperbarui data kendaraan secara offline-first
   Future<int> updateVehicle(Vehicle vehicle) async {
     final db = await database;
+
     if (vehicle.isPrimary && vehicle.id != null) {
       await db.update(
         'vehicles',
@@ -322,46 +375,104 @@ class DatabaseHelper {
         whereArgs: [vehicle.id],
       );
     }
-    return await db.update(
+
+    final localMap = vehicle.toMap();
+    localMap['isSynced'] = 0;
+
+    final updated = await db.update(
       'vehicles',
-      vehicle.toMap(),
+      localMap,
       where: 'id = ?',
       whereArgs: [vehicle.id],
     );
+
+    try {
+      final remote = await ApiService.instance.updateVehicle(
+        vehicle: vehicle,
+        userId: 1,
+      );
+      if (remote != null) {
+        await db.update(
+          'vehicles',
+          {'isSynced': 1},
+          where: 'id = ?',
+          whereArgs: [vehicle.id],
+        );
+      }
+    } catch (e) {
+      debugPrint('updateVehicle disimpan lokal (offline): $e');
+    }
+
+    return updated;
   }
 
+  // Menghapus data kendaraan lokal dan server
   Future<int> deleteVehicle(int id) async {
     final db = await database;
-    final deleted =
-        await db.delete('vehicles', where: 'id = ?', whereArgs: [id]);
+
+    final deleted = await db.delete(
+      'vehicles',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
     final remaining = await getVehicles();
-    if (remaining.isNotEmpty && !remaining.any((v) => v.isPrimary)) {
+    if (remaining.isNotEmpty && !remaining.any((vehicle) => vehicle.isPrimary)) {
       await setPrimaryVehicle(remaining.first.id!);
     }
+
+    try {
+      await ApiService.instance.deleteVehicle(id: id, userId: 1);
+    } catch (e) {
+      debugPrint('deleteVehicle lokal berhasil, server offline: $e');
+    }
+
     return deleted;
   }
 
+  // Mengatur kendaraan utama
   Future<void> setPrimaryVehicle(int id) async {
     final db = await database;
+
     await db.update('vehicles', {'isPrimary': 0});
-    await db.update('vehicles', {'isPrimary': 1},
-        where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'vehicles',
+      {'isPrimary': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    try {
+      final v = (await db.query('vehicles', where: 'id = ?', whereArgs: [id], limit: 1)) as List;
+      if (v.isNotEmpty) {
+        final vehicle = Vehicle.fromMap(Map<String, dynamic>.from(v.first));
+        await ApiService.instance.updateVehicle(vehicle: vehicle, userId: 1);
+      }
+    } catch (_) {}
+  }
+
+  // Sinkronisasi data kendaraan lokal yang tertunda ke PostgreSQL backend
+  Future<int> syncPendingVehicles({int userId = 1}) async {
+    final db = await database;
+    final unsynced = await db.query('vehicles', where: 'isSynced = ?', whereArgs: [0]);
+    if ((unsynced as List).isEmpty) return 0;
+
+    final list = unsynced.map((m) => Vehicle.fromMap(Map<String, dynamic>.from(m))).toList();
+    final ok = await ApiService.instance.syncVehicles(vehicles: list, userId: userId);
+    if (ok) {
+      await db.update('vehicles', {'isSynced': 1}, where: 'isSynced = ?', whereArgs: [0]);
+      return list.length;
+    }
+    return 0;
   }
 
   // === SERVICE RECORDS CRUD & BLOCKCHAIN ===
   Future<List<ServiceRecord>> getServiceRecords({int? vehicleId}) async {
     final db = await database;
     final maps = vehicleId != null
-        ? await db.query(
-            'service_records',
-            where: 'vehicleId = ?',
-            whereArgs: [vehicleId],
-            orderBy: 'id DESC',
-          )
+        ? await db.query('service_records', where: 'vehicleId = ?', whereArgs: [vehicleId], orderBy: 'id DESC')
         : await db.query('service_records', orderBy: 'id DESC');
-    return (maps as List)
-        .map((m) => ServiceRecord.fromMap(Map<String, dynamic>.from(m)))
-        .toList();
+    return (maps as List).map((m) => ServiceRecord.fromMap(Map<String, dynamic>.from(m))).toList();
   }
 
   Future<int> addServiceRecord(ServiceRecord record) async {
@@ -372,18 +483,12 @@ class DatabaseHelper {
   Future<bool> verifyBlockchainIntegrity({int? vehicleId}) async {
     final db = await database;
     final maps = vehicleId != null
-        ? await db.query(
-            'service_records',
-            where: 'vehicleId = ?',
-            whereArgs: [vehicleId],
-            orderBy: 'id ASC',
-          )
+        ? await db.query('service_records', where: 'vehicleId = ?', whereArgs: [vehicleId], orderBy: 'id ASC')
         : await db.query('service_records', orderBy: 'id ASC');
 
     if ((maps as List).isEmpty) return true;
 
-    String expectedPrevHash =
-        '0000000000000000000000000000000000000000000000000000000000000000';
+    String expectedPrevHash = '0000000000000000000000000000000000000000000000000000000000000000';
     for (int i = 0; i < maps.length; i++) {
       final rec = ServiceRecord.fromMap(Map<String, dynamic>.from(maps[i]));
       if (i > 0 && rec.prevHash != expectedPrevHash) {
@@ -396,7 +501,7 @@ class DatabaseHelper {
     }
     return true;
   }
-
+  
   // === REMINDERS ===
   Future<List<ReminderItem>> getReminders() async {
     final db = await database;

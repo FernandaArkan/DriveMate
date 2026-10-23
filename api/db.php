@@ -3,11 +3,14 @@
 $config = require __DIR__ . '/config.php';
 
 try {
+    $sslmode = !empty($config['sslmode']) ? $config['sslmode'] : 'prefer';
+
     $dsn = sprintf(
-        'pgsql:host=%s;port=%s;dbname=%s',
+        'pgsql:host=%s;port=%s;dbname=%s;sslmode=%s',
         $config['host'],
         $config['port'],
-        $config['database']
+        $config['database'],
+        $sslmode
     );
 
     $pdo = new PDO(
@@ -24,7 +27,9 @@ try {
     error_log('Database connection failed: ' . $e->getMessage());
 
     http_response_code(500);
-    header('Content-Type: application/json; charset=utf-8');
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+    }
 
     echo json_encode([
         'success' => false,

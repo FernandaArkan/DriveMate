@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 
+
 class BiometricService {
   BiometricService._internal();
   static final BiometricService instance = BiometricService._internal();
