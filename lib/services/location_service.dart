@@ -94,7 +94,10 @@ class LocationService {
     return await Geolocator.openAppSettings();
   }
 
-  Future<Position?> getCurrentLocation({bool promptPermission = false}) async {
+  Future<Position?> getCurrentLocation({
+    bool promptPermission = false,
+    bool forceRefresh = false,
+  }) async {
     try {
       // Periksa izin tanpa meminta ulang secara agresif
       final permission = await Geolocator.checkPermission();
@@ -112,19 +115,40 @@ class LocationService {
       final isGpsOn = await Geolocator.isLocationServiceEnabled();
       if (!isGpsOn) return null;
 
-      // Coba ambil posisi terakhir terlebih dahulu untuk kecepatan respons
-      final lastPos = await Geolocator.getLastKnownPosition();
+      // Jika tidak diminta forceRefresh, periksa posisi terakhir terlebih dahulu
+      Position? lastPos;
+      if (!forceRefresh) {
+        lastPos = await Geolocator.getLastKnownPosition();
+        if (lastPos != null && (lastPos.latitude != 0.0 || lastPos.longitude != 0.0)) {
+          final age = DateTime.now().difference(lastPos.timestamp);
+          if (age.inSeconds < 30) {
+            return lastPos;
+          }
+        }
+      }
 
       try {
         final freshPos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 8),
+            timeLimit: Duration(seconds: 10),
           ),
         );
-        return freshPos;
-      } catch (_) {
-        return lastPos;
+        if (freshPos.latitude != 0.0 || freshPos.longitude != 0.0) {
+          return freshPos;
+        }
+        return null;
+      } catch (e) {
+        debugPrint('Geolocator.getCurrentPosition failed: $e');
+        if (!forceRefresh && lastPos != null) {
+          return lastPos;
+        }
+        // Fallback terakhir: periksa posisi terakhir jika tersedia
+        final fallback = await Geolocator.getLastKnownPosition();
+        if (fallback != null && (fallback.latitude != 0.0 || fallback.longitude != 0.0)) {
+          return fallback;
+        }
+        return null;
       }
     } catch (e) {
       debugPrint('Error getting current location: $e');

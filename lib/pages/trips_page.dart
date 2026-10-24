@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -219,34 +220,61 @@ class _TripsPageState extends State<TripsPage> {
 
     if (_isSearching) return;
 
-    if (_currentPosition == null) {
-      await _fetchLocation();
-    }
-
-    if (!mounted) return;
-
-    final position = _currentPosition;
-    if (position == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Lokasi GPS belum tersedia. Harap aktifkan GPS terlebih dahulu.'),
-          action: SnackBarAction(
-            label: 'Aktifkan',
-            textColor: AppTheme.cyan,
-            onPressed: () => _locationService.openLocationSettings(),
-          ),
-        ),
-      );
+    // 1. Periksa izin lokasi dan status GPS perangkat sebelum melakukan pencarian
+    final permCheck = await _locationService.checkAndRequestPermission();
+    if (!permCheck.isGranted) {
+      _handlePermissionFailure(permCheck);
       return;
     }
 
     setState(() {
+      _isLoadingLocation = true;
       _isSearching = true;
       _searchResults = [];
       _searchErrorMessage = null;
       _searchEmptyMessage = null;
       _lastSearchQuery = query;
     });
+
+    // 2. Ambil koordinat GPS aktual dari perangkat (forceRefresh)
+    Position? position;
+    try {
+      position = await _locationService.getCurrentLocation(forceRefresh: true);
+    } catch (e) {
+      debugPrint('Error mendapatkan GPS aktual saat pencarian: $e');
+    }
+
+    if (!mounted) return;
+
+    // Tangani jika sinyal GPS belum terkunci atau koordinat tidak valid
+    if (position == null || (position.latitude == 0.0 && position.longitude == 0.0)) {
+      setState(() {
+        _isLoadingLocation = false;
+        _isSearching = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Lokasi GPS belum terkunci atau tidak valid. Pastikan GPS aktif dan berada di area terbuka.'),
+          action: SnackBarAction(
+            label: 'Cek GPS',
+            textColor: AppTheme.cyan,
+            onPressed: () => _locationService.openLocationSettings(),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Perbarui state posisi terkini dengan koordinat GPS aktual
+    setState(() {
+      _currentPosition = position;
+      _isLoadingLocation = false;
+    });
+
+    if (position.heading >= 0) {
+      _sensorService.updateGpsHeading(position.heading);
+    }
 
     try {
       final normalized = query.toLowerCase();
@@ -288,8 +316,11 @@ class _TripsPageState extends State<TripsPage> {
         _searchResults = results;
         _isSearching = false;
         if (results.isEmpty) {
+          final categoryName = isFuel && isWorkshop
+              ? 'SPBU & bengkel'
+              : (isFuel ? 'SPBU' : (isWorkshop ? 'bengkel' : 'tempat'));
           _searchEmptyMessage =
-              'Tidak ada tempat ditemukan di sekitar lokasi Anda (radius 5 km). Coba kata kunci lain.';
+              'Tidak ada $categoryName ditemukan di sekitar lokasi Anda (radius 5 km). Coba beberapa saat lagi atau ubah kata kunci.';
           _searchErrorMessage = null;
         } else {
           _searchEmptyMessage = null;
@@ -350,16 +381,16 @@ class _TripsPageState extends State<TripsPage> {
     final filters = <String>[];
 
     if (fuel) {
-      filters.add('nw(around:5000,$latitude,$longitude)["amenity"="fuel"];');
+      filters.add('nwr(around:5000,$latitude,$longitude)["amenity"="fuel"];');
     }
 
     if (workshop) {
       filters.addAll([
-        'nw(around:5000,$latitude,$longitude)["shop"="car_repair"];',
-        'nw(around:5000,$latitude,$longitude)["craft"="car_repair"];',
-        'nw(around:5000,$latitude,$longitude)["amenity"="car_repair"];',
-        'nw(around:5000,$latitude,$longitude)["shop"="motorcycle_repair"];',
-        'nw(around:5000,$latitude,$longitude)["shop"="tyres"];',
+        'nwr(around:5000,$latitude,$longitude)["shop"="car_repair"];',
+        'nwr(around:5000,$latitude,$longitude)["craft"="car_repair"];',
+        'nwr(around:5000,$latitude,$longitude)["amenity"="car_repair"];',
+        'nwr(around:5000,$latitude,$longitude)["shop"="motorcycle_repair"];',
+        'nwr(around:5000,$latitude,$longitude)["shop"="tyres"];',
       ]);
     }
 
@@ -368,7 +399,7 @@ class _TripsPageState extends State<TripsPage> {
 (
   ${filters.join('\n')}
 );
-out center 40 tags;
+out center tags;
 ''';
 
     final mirrors = [
@@ -417,14 +448,20 @@ out center 40 tags;
       }
     }
 
-    // Jika server Overpass mengalami 504/timeout, gunakan OpenStreetMap Nominatim sebagai fallback resmi
+    // Jika server Overpass mengalami 504/timeout, gunakan OpenStreetMap Nominatim sebagai fallback resmi dengan viewbox berpusat pada GPS pengguna
     if (response == null || response.statusCode != 200) {
       debugPrint('Overpass mirrors tidak merespons ($lastError). Beralih ke OpenStreetMap Nominatim fallback...');
       try {
         final fallbackKeyword = fuel && workshop
-            ? 'SPBU Bengkel'
+            ? 'SPBU'
             : (fuel ? 'SPBU' : 'Bengkel Mobil');
-        final fallbackResults = await _searchByName(fallbackKeyword, latitude, longitude);
+        final fallbackResults = await _searchByName(
+          fallbackKeyword,
+          latitude,
+          longitude,
+          radiusKm: 8.0,
+          restrictToRadius: true,
+        );
         if (fallbackResults.isNotEmpty) {
           return fallbackResults;
         }
@@ -445,20 +482,42 @@ out center 40 tags;
     final elements = data['elements'] as List<dynamic>? ?? [];
 
     final places = <PlaceResult>[];
+    final seenCoordinates = <String>{};
 
     for (final item in elements) {
       final element = item as Map<String, dynamic>;
       final tags = element['tags'] as Map<String, dynamic>? ?? {};
       final center = element['center'] as Map<String, dynamic>?;
 
-      final lat = element['lat'] ?? center?['lat'];
-      final lon = element['lon'] ?? center?['lon'];
+      final rawLat = element['lat'] ?? center?['lat'];
+      final rawLon = element['lon'] ?? center?['lon'];
+      if (rawLat == null || rawLon == null) continue;
+
+      final lat = double.tryParse(rawLat.toString());
+      final lon = double.tryParse(rawLon.toString());
       if (lat == null || lon == null) continue;
 
-      final name = tags['name']?.toString().trim();
+      // Hindari duplikasi lokasi yang berdekatan dari node dan way yang sama
+      final coordKey = '${lat.toStringAsFixed(4)},${lon.toStringAsFixed(4)}';
+      if (seenCoordinates.contains(coordKey)) continue;
+      seenCoordinates.add(coordKey);
+
       final amenity = tags['amenity']?.toString();
       final shop = tags['shop']?.toString();
       final isFuelNode = amenity == 'fuel' || tags.containsKey('fuel');
+
+      String? name = tags['name']?.toString().trim();
+      if (name == null || name.isEmpty) {
+        final brand = tags['brand']?.toString().trim();
+        final operatorName = tags['operator']?.toString().trim();
+        if (brand != null && brand.isNotEmpty) {
+          name = 'SPBU $brand';
+        } else if (operatorName != null && operatorName.isNotEmpty) {
+          name = 'SPBU $operatorName';
+        } else {
+          name = isFuelNode ? 'SPBU' : 'Bengkel Otomotif';
+        }
+      }
 
       final category = isFuelNode
           ? 'SPBU'
@@ -474,24 +533,22 @@ out center 40 tags;
           ? addressParts.join(', ')
           : (tags['operator']?.toString() ??
               tags['brand']?.toString() ??
-              'Koordinat: ${(lat as num).toStringAsFixed(4)}, ${(lon as num).toStringAsFixed(4)}');
+              'Koordinat: ${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)}');
 
       final distanceKm = LocationService.instance.calculateDistance(
         latitude,
         longitude,
-        (lat as num).toDouble(),
-        (lon as num).toDouble(),
+        lat,
+        lon,
       );
 
       places.add(
         PlaceResult(
-          name: name != null && name.isNotEmpty
-              ? name
-              : (isFuelNode ? 'SPBU Terdekat' : 'Bengkel Otomotif'),
+          name: name,
           address: address,
           category: category,
-          latitude: lat.toDouble(),
-          longitude: lon.toDouble(),
+          latitude: lat,
+          longitude: lon,
           distanceKm: double.parse(distanceKm.toStringAsFixed(2)),
         ),
       );
@@ -501,22 +558,43 @@ out center 40 tags;
     return places.take(25).toList();
   }
 
-    Future<List<PlaceResult>> _searchByName(
+  Future<List<PlaceResult>> _searchByName(
     String query,
     double latitude,
-    double longitude,
-  ) async {
+    double longitude, {
+    double radiusKm = 15.0,
+    bool restrictToRadius = false,
+  }) async {
+    // Hitung batas geografis viewbox berdasarkan koordinat aktual pengguna
+    final deltaLat = radiusKm / 111.0;
+    final latRad = latitude * (math.pi / 180.0);
+    final cosLat = math.cos(latRad).abs().clamp(0.1, 1.0);
+    final deltaLon = radiusKm / (111.0 * cosLat);
+
+    final minLon = longitude - deltaLon;
+    final maxLon = longitude + deltaLon;
+    final minLat = latitude - deltaLat;
+    final maxLat = latitude + deltaLat;
+
+    final viewboxStr =
+        "${minLon.toStringAsFixed(6)},${maxLat.toStringAsFixed(6)},${maxLon.toStringAsFixed(6)},${minLat.toStringAsFixed(6)}";
+
+    final queryParams = <String, String>{
+      'q': query,
+      'format': 'jsonv2',
+      'limit': '25',
+      'viewbox': viewboxStr,
+      'addressdetails': '1',
+    };
+
+    if (restrictToRadius) {
+      queryParams['bounded'] = '1';
+    }
+
     final uri = Uri.https(
       'nominatim.openstreetmap.org',
       '/search',
-      {
-        'q': query,
-        'format': 'jsonv2',
-        'limit': '15',
-        'lat': latitude.toString(),
-        'lon': longitude.toString(),
-        'addressdetails': '1',
-      },
+      queryParams,
     );
 
     final response = await http.get(
@@ -542,13 +620,28 @@ out center 40 tags;
 
       final dist = LocationService.instance.calculateDistance(latitude, longitude, lat, lon);
 
+      // Jika dibatasi radius (misal pencarian fallback SPBU/bengkel), saring objek yang berada di luar radius
+      if (restrictToRadius && dist > radiusKm) {
+        continue;
+      }
+
+      final normalizedQ = query.toLowerCase();
+      final isFuelSearch = normalizedQ.contains('spbu') ||
+          normalizedQ.contains('bensin') ||
+          normalizedQ.contains('pertamina') ||
+          normalizedQ.contains('shell');
+      final isWorkshopSearch = normalizedQ.contains('bengkel') ||
+          normalizedQ.contains('servis');
+
+      final category = isFuelSearch ? 'SPBU' : (isWorkshopSearch ? 'Bengkel' : 'Tempat');
+
       places.add(
         PlaceResult(
           name: result['name']?.toString().trim().isNotEmpty == true
               ? result['name'].toString()
               : (result['display_name']?.toString().split(',').first ?? query),
           address: result['display_name']?.toString() ?? '',
-          category: 'Tempat',
+          category: category,
           latitude: lat,
           longitude: lon,
           distanceKm: double.parse(dist.toStringAsFixed(2)),

@@ -290,6 +290,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                 '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} WIB';
 
             return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(22)),
@@ -302,17 +303,23 @@ class _NotificationsPageState extends State<NotificationsPage>
                     color: AppTheme.primary,
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    isEditing
-                        ? 'Ubah Pengingat Servis'
-                        : 'Atur Pengingat Servis',
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.w800),
+                  Expanded(
+                    child: Text(
+                      isEditing
+                          ? 'Ubah Pengingat Servis'
+                          : 'Atur Pengingat Servis',
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w800),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
-              content: SizedBox(
-                width: 360,
+              content: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 380,
+                  maxHeight: MediaQuery.sizeOf(dialogCtx).height * 0.65,
+                ),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -328,12 +335,14 @@ class _NotificationsPageState extends State<NotificationsPage>
                       ),
                       const SizedBox(height: 5),
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        isDense: true,
                         initialValue: category,
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: const Color(0xFFF4F7FB),
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                              horizontal: 12, vertical: 10),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -342,16 +351,16 @@ class _NotificationsPageState extends State<NotificationsPage>
                         items: const [
                           DropdownMenuItem(
                               value: 'Servis',
-                              child: Text('Servis Berkala / Ganti Oli')),
+                              child: Text('Servis Berkala / Ganti Oli', overflow: TextOverflow.ellipsis)),
                           DropdownMenuItem(
                               value: 'Pajak',
-                              child: Text('Pajak Kendaraan (PKB/STNK)')),
+                              child: Text('Pajak Kendaraan (PKB/STNK)', overflow: TextOverflow.ellipsis)),
                           DropdownMenuItem(
                               value: 'Perawatan',
-                              child: Text('Perawatan Ban, Aki & Rem')),
+                              child: Text('Perawatan Ban, Aki & Rem', overflow: TextOverflow.ellipsis)),
                           DropdownMenuItem(
                               value: 'Sistem',
-                              child: Text('Pemeriksaan Umum')),
+                              child: Text('Pemeriksaan Umum', overflow: TextOverflow.ellipsis)),
                         ],
                         onChanged: (val) {
                           if (val != null) {
@@ -359,37 +368,35 @@ class _NotificationsPageState extends State<NotificationsPage>
                           }
                         },
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
 
                       // Template Pintasan Judul
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            'Ganti Oli Mesin',
-                            'Servis 10.000 km',
-                            'Pajak STNK',
-                            'Cek Aki & Ban',
-                          ].map((template) {
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ActionChip(
-                                label: Text(template,
-                                    style: const TextStyle(fontSize: 10)),
-                                backgroundColor: const Color(0xFFEBF2FA),
-                                side: BorderSide.none,
-                                padding: EdgeInsets.zero,
-                                onPressed: () {
-                                  setDialogState(() {
-                                    titleController.text = template;
-                                  });
-                                },
-                              ),
-                            );
-                          }).toList(),
-                        ),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          'Ganti Oli Mesin',
+                          'Servis 10.000 km',
+                          'Pajak STNK',
+                          'Cek Aki & Ban',
+                        ].map((template) {
+                          return ActionChip(
+                            label: Text(template,
+                                style: const TextStyle(fontSize: 11)),
+                            backgroundColor: const Color(0xFFEBF2FA),
+                            side: BorderSide.none,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            onPressed: () {
+                              setDialogState(() {
+                                titleController.text = template;
+                              });
+                            },
+                          );
+                        }).toList(),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
 
                       // Judul
                       const Text(
@@ -429,12 +436,14 @@ class _NotificationsPageState extends State<NotificationsPage>
                         ),
                         const SizedBox(height: 5),
                         DropdownButtonFormField<int>(
+                          isExpanded: true,
+                          isDense: true,
                           initialValue: selectedVehicleId,
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: const Color(0xFFF4F7FB),
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
+                                horizontal: 12, vertical: 10),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -446,6 +455,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                               child: Text(
                                 '${v.brand} ${v.name} (${v.plate})',
                                 style: const TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             );
                           }).toList(),
@@ -502,6 +512,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                                         style: const TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w700),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ],
@@ -540,6 +551,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                                         style: const TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w700),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ],
@@ -549,11 +561,12 @@ class _NotificationsPageState extends State<NotificationsPage>
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
 
                       // Mode Presisi Exact Alarm (Opsional)
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
+                        dense: true,
                         title: const Text(
                           'Mode Presisi Waktu (Exact Alarm)',
                           style: TextStyle(
