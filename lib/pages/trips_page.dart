@@ -12,6 +12,7 @@ import '../models/trip_record.dart';
 import '../services/location_service.dart';
 import '../services/sensor_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/dynamic_compass_widget.dart';
 
 class PlaceResult {
   final String name;
@@ -59,6 +60,7 @@ class _TripsPageState extends State<TripsPage> {
   PlaceResult? _selectedPlace;
   List<PlaceResult> _searchResults = [];
   String? _searchErrorMessage;
+  String? _searchEmptyMessage;
   String _lastSearchQuery = '';
 
   final List<TripRecord> _savedTrips = [];
@@ -110,8 +112,13 @@ class _TripsPageState extends State<TripsPage> {
         _isLoadingLocation = false;
       });
 
-      if (pos != null && _isMapReady) {
-        _mapController.move(LatLng(pos.latitude, pos.longitude), 16);
+      if (pos != null) {
+        if (pos.heading >= 0) {
+          _sensorService.updateGpsHeading(pos.heading);
+        }
+        if (_isMapReady) {
+          _mapController.move(LatLng(pos.latitude, pos.longitude), 16);
+        }
       }
 
       if (pos == null) {
@@ -237,6 +244,7 @@ class _TripsPageState extends State<TripsPage> {
       _isSearching = true;
       _searchResults = [];
       _searchErrorMessage = null;
+      _searchEmptyMessage = null;
       _lastSearchQuery = query;
     });
 
@@ -279,33 +287,43 @@ class _TripsPageState extends State<TripsPage> {
       setState(() {
         _searchResults = results;
         _isSearching = false;
-      });
-
-      if (results.isEmpty) {
-        setState(() {
-          _searchErrorMessage = 'Tidak ada tempat ditemukan di sekitar lokasi Anda (radius 5 km). Coba kata kunci lain.';
-        });
-      } else {
-        // Fokuskan peta ke tempat terdekat
-        final first = results.first;
-        if (_isMapReady) {
-          _mapController.move(LatLng(first.latitude, first.longitude), 14);
+        if (results.isEmpty) {
+          _searchEmptyMessage =
+              'Tidak ada tempat ditemukan di sekitar lokasi Anda (radius 5 km). Coba kata kunci lain.';
+          _searchErrorMessage = null;
+        } else {
+          _searchEmptyMessage = null;
+          _searchErrorMessage = null;
+          final first = results.first;
+          if (_isMapReady) {
+            _mapController.move(LatLng(first.latitude, first.longitude), 14);
+          }
         }
-      }
+      });
     } catch (e) {
-      debugPrint('Error pencarian: $e');
+      debugPrint('Error pencarian: ');
       if (!mounted) return;
 
-      String friendlyError = 'Pencarian gagal: $e';
-      if (e.toString().contains('429')) {
-        friendlyError = 'Batas akses Overpass API tercapai (Rate Limit 429). Mohon tunggu beberapa detik sebelum mencoba kembali.';
-      } else if (e.toString().contains('TimeoutException')) {
-        friendlyError = 'Koneksi ke server peta waktu habis. Periksa koneksi internet Anda.';
+      final errStr = e.toString();
+      String friendlyError = 'Pencarian gagal: ';
+      if (errStr.contains('504')) {
+        friendlyError =
+            'Overpass API tidak merespons, HTTP 504. Server peta sedang sibuk, silakan coba lagi.';
+      } else if (errStr.contains('TimeoutException') || errStr.contains('kehabisan waktu')) {
+        friendlyError =
+            'Server peta kehabisan waktu, periksa koneksi internet Anda lalu coba lagi.';
+      } else if (errStr.contains('429')) {
+        friendlyError =
+            'Batas akses Overpass API tercapai (Rate Limit 429). Mohon tunggu beberapa detik sebelum mencoba kembali.';
+      } else if (errStr.contains('SocketException') || errStr.contains('Failed host lookup')) {
+        friendlyError =
+            'Tidak dapat terhubung ke internet. Periksa koneksi data atau Wi-Fi Anda.';
       }
 
       setState(() {
         _isSearching = false;
         _searchErrorMessage = friendlyError;
+        _searchEmptyMessage = null;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -332,29 +350,32 @@ class _TripsPageState extends State<TripsPage> {
     final filters = <String>[];
 
     if (fuel) {
-      filters.add('nwr(around:5000,$latitude,$longitude)["amenity"="fuel"];');
+      filters.add('nw(around:5000,$latitude,$longitude)["amenity"="fuel"];');
     }
 
     if (workshop) {
       filters.addAll([
-        'nwr(around:5000,$latitude,$longitude)["shop"="car_repair"];',
-        'nwr(around:5000,$latitude,$longitude)["craft"="car_repair"];',
-        'nwr(around:5000,$latitude,$longitude)["amenity"="car_repair"];',
+        'nw(around:5000,$latitude,$longitude)["shop"="car_repair"];',
+        'nw(around:5000,$latitude,$longitude)["craft"="car_repair"];',
+        'nw(around:5000,$latitude,$longitude)["amenity"="car_repair"];',
+        'nw(around:5000,$latitude,$longitude)["shop"="motorcycle_repair"];',
+        'nw(around:5000,$latitude,$longitude)["shop"="tyres"];',
       ]);
     }
 
     final query = '''
-[out:json][timeout:20];
+[out:json][timeout:15];
 (
   ${filters.join('\n')}
 );
-out center tags;
+out center 40 tags;
 ''';
 
     final mirrors = [
       'https://overpass-api.de/api/interpreter',
+      'https://lz4.overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
-      'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+      'https://overpass.private.coffee/api/interpreter',
     ];
 
     http.Response? response;
@@ -365,28 +386,59 @@ out center tags;
         response = await http
             .post(
               Uri.parse(mirror),
-              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8',
+                'User-Agent': 'DriveMateApp/1.0 (contact: student@drivemate.id)',
+                'Accept': 'application/json',
+              },
               body: {'data': query},
             )
-            .timeout(const Duration(seconds: 15));
+            .timeout(const Duration(seconds: 8));
 
         if (response.statusCode == 200) {
           break;
         } else if (response.statusCode == 429) {
           lastError = 'HTTP 429 (Rate limit)';
-          debugPrint('Overpass $mirror returned 429, trying next mirror...');
-          await Future.delayed(const Duration(milliseconds: 400));
+          debugPrint('Overpass  returned 429, trying next mirror...');
+          await Future.delayed(const Duration(milliseconds: 300));
+        } else if (response.statusCode == 504) {
+          lastError = 'HTTP 504 (Gateway Timeout)';
+          debugPrint('Overpass  returned 504, trying next mirror...');
+          await Future.delayed(const Duration(milliseconds: 300));
         } else {
           lastError = 'HTTP ${response.statusCode}';
+          debugPrint('Overpass  returned ${response.statusCode}, trying next mirror...');
+          await Future.delayed(const Duration(milliseconds: 200));
         }
       } catch (e) {
         lastError = e.toString();
-        debugPrint('Mirror $mirror failed: $e');
+        debugPrint('Mirror  failed: ');
+        await Future.delayed(const Duration(milliseconds: 200));
       }
     }
 
+    // Jika server Overpass mengalami 504/timeout, gunakan OpenStreetMap Nominatim sebagai fallback resmi
     if (response == null || response.statusCode != 200) {
-      throw Exception('Server Overpass API tidak merespons ($lastError).');
+      debugPrint('Overpass mirrors tidak merespons ($lastError). Beralih ke OpenStreetMap Nominatim fallback...');
+      try {
+        final fallbackKeyword = fuel && workshop
+            ? 'SPBU Bengkel'
+            : (fuel ? 'SPBU' : 'Bengkel Mobil');
+        final fallbackResults = await _searchByName(fallbackKeyword, latitude, longitude);
+        if (fallbackResults.isNotEmpty) {
+          return fallbackResults;
+        }
+      } catch (nominatimErr) {
+        debugPrint('Nominatim fallback juga gagal: $nominatimErr');
+      }
+
+      if (lastError.contains('504')) {
+        throw Exception('Overpass API tidak merespons, HTTP 504.');
+      } else if (lastError.contains('TimeoutException') || lastError.contains('kehabisan waktu')) {
+        throw Exception('Server peta kehabisan waktu, periksa koneksi internet.');
+      } else {
+        throw Exception('Server Overpass API tidak merespons ($lastError).');
+      }
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -449,7 +501,7 @@ out center tags;
     return places.take(25).toList();
   }
 
-  Future<List<PlaceResult>> _searchByName(
+    Future<List<PlaceResult>> _searchByName(
     String query,
     double latitude,
     double longitude,
@@ -979,7 +1031,35 @@ out center tags;
               ),
             ),
 
-            // Indikator Error atau Hasil Kosong
+            // Indikator Hasil Pencarian Kosong (Bukan Gangguan Jaringan)
+            if (_searchEmptyMessage != null)
+              Container(
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.search_off_rounded, color: AppTheme.textSecondary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _searchEmptyMessage!,
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 16, color: AppTheme.textSecondary),
+                      onPressed: () => setState(() => _searchEmptyMessage = null),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Indikator Gangguan Server Peta atau Jaringan
             if (_searchErrorMessage != null)
               Container(
                 margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -991,7 +1071,7 @@ out center tags;
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline_rounded, color: AppTheme.danger, size: 20),
+                    const Icon(Icons.cloud_off_rounded, color: AppTheme.danger, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -1000,7 +1080,11 @@ out center tags;
                       ),
                     ),
                     if (_lastSearchQuery.isNotEmpty)
-                      TextButton(
+                      FilledButton.tonal(
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                        ),
                         onPressed: () => _searchPlaces(_lastSearchQuery),
                         child: const Text('Coba Lagi', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
@@ -1227,6 +1311,20 @@ out center tags;
                     ),
                   ),
 
+                  // Kompas Dinamis Real-Time
+                  Positioned(
+                    top: 68,
+                    right: 36,
+                    child: DynamicCompassWidget(
+                      size: 96,
+                      onTap: () {
+                        if (_isMapReady && _currentPosition != null) {
+                          _mapController.move(_mapCenter, _mapController.camera.zoom);
+                        }
+                      },
+                    ),
+                  ),
+
                   // Card Tujuan & Tombol Navigasi
                   Positioned(
                     left: 36,
@@ -1421,6 +1519,18 @@ out center tags;
                       label: 'Gyroscope',
                       value: '${data.gyroZ.toStringAsFixed(2)} rad/s',
                       sub: 'X: ${data.gyroX.toStringAsFixed(1)}  Y: ${data.gyroY.toStringAsFixed(1)}',
+                    ),
+                  ),
+                  Container(width: 1, height: 42, color: const Color(0xFFE2E9F3)),
+                  Expanded(
+                    child: _sensorStat(
+                      label: 'Kompas Hadap',
+                      value: data.heading != null
+                          ? "${data.heading!.toStringAsFixed(0)}° ${data.headingDirection}"
+                          : '--',
+                      sub: data.isCompassSupported
+                          ? 'Sensor Kompas Aktif'
+                          : 'Sensor Tidak Aktif',
                     ),
                   ),
                 ],

@@ -1,18 +1,36 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:intl/intl.dart';
 
 import 'database/platform_init.dart';
 import 'pages/ai_page.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
+import 'pages/notifications_page.dart';
 import 'pages/profile_page.dart';
 import 'pages/splash_page.dart';
 import 'pages/trips_page.dart';
 import 'pages/vehicles_page.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('id_ID', null);
+  await initializeDateFormatting('en_US', null);
+  Intl.defaultLocale = 'id_ID';
   initPlatformDatabase();
+  await NotificationService.instance.init();
+  NotificationService.instance.onNotificationClick = (payload) {
+    rootNavigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => const NotificationsPage()),
+    );
+  };
+  unawaited(NotificationService.instance.restoreScheduledReminders());
   runApp(const DriveMateApp());
 }
 
@@ -22,9 +40,20 @@ class DriveMateApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'DriveMate',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('id', 'ID'),
+        Locale('en', 'US'),
+      ],
+      locale: const Locale('id', 'ID'),
       initialRoute: '/',
       routes: {
         '/': (context) => const SplashPage(),

@@ -16,13 +16,13 @@ class VehicleRepository extends ChangeNotifier {
   Vehicle? get primaryVehicle => _primaryVehicle;
   bool get isLoading => _isLoading;
 
-  Future<void> loadVehicles() async {
+  Future<void> loadVehicles({int? userId}) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      _vehicles = await _dbHelper.getVehicles();
-      _primaryVehicle = await _dbHelper.getPrimaryVehicle();
+      _vehicles = await _dbHelper.getVehicles(userId: userId);
+      _primaryVehicle = await _dbHelper.getPrimaryVehicle(userId: userId);
     } catch (e) {
       debugPrint('Error loading vehicles: $e');
     } finally {

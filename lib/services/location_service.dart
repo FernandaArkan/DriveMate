@@ -21,7 +21,7 @@ class LocationService {
   LocationService._internal();
   static final LocationService instance = LocationService._internal();
 
-  Future<LocationCheckResult> checkAndRequestPermission() async {
+  Future<LocationCheckResult> checkAndRequestPermission({bool promptIfNeeded = true}) async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -32,14 +32,13 @@ class LocationService {
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          return const LocationCheckResult(
-            status: LocationPermissionStatus.denied,
-            message: 'Izin lokasi ditolak. Fitur peta memerlukan izin untuk mencari SPBU & bengkel terdekat.',
-          );
-        }
+
+      // Jika izin sudah diberikan sebelumnya, langsung kembalikan granted tanpa memicu dialog
+      if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+        return const LocationCheckResult(
+          status: LocationPermissionStatus.granted,
+          message: 'Izin lokasi telah diberikan.',
+        );
       }
 
       if (permission == LocationPermission.deniedForever) {
@@ -47,6 +46,31 @@ class LocationService {
           status: LocationPermissionStatus.deniedForever,
           message: 'Izin lokasi ditolak secara permanen. Buka pengaturan aplikasi untuk mengizinkan akses lokasi.',
         );
+      }
+
+      // Hanya minta izin jika diminta dan statusnya denied (belum permanen)
+      if (permission == LocationPermission.denied) {
+        if (!promptIfNeeded) {
+          return const LocationCheckResult(
+            status: LocationPermissionStatus.denied,
+            message: 'Izin lokasi belum diberikan.',
+          );
+        }
+
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          return const LocationCheckResult(
+            status: LocationPermissionStatus.denied,
+            message: 'Izin lokasi ditolak. Fitur peta memerlukan izin untuk mencari SPBU & bengkel terdekat.',
+          );
+        }
+
+        if (permission == LocationPermission.deniedForever) {
+          return const LocationCheckResult(
+            status: LocationPermissionStatus.deniedForever,
+            message: 'Izin lokasi ditolak secara permanen. Buka pengaturan aplikasi untuk mengizinkan akses lokasi.',
+          );
+        }
       }
 
       return const LocationCheckResult(
@@ -70,12 +94,25 @@ class LocationService {
     return await Geolocator.openAppSettings();
   }
 
-  Future<Position?> getCurrentLocation() async {
+  Future<Position?> getCurrentLocation({bool promptPermission = false}) async {
     try {
-      final permCheck = await checkAndRequestPermission();
-      if (!permCheck.isGranted) return null;
+      // Periksa izin tanpa meminta ulang secara agresif
+      final permission = await Geolocator.checkPermission();
+      final hasPermission = permission == LocationPermission.whileInUse || permission == LocationPermission.always;
 
-      // Coba ambil posisi terakhir terlebih dahulu untuk kecepatan
+      if (!hasPermission) {
+        if (promptPermission) {
+          final permCheck = await checkAndRequestPermission(promptIfNeeded: true);
+          if (!permCheck.isGranted) return null;
+        } else {
+          return null;
+        }
+      }
+
+      final isGpsOn = await Geolocator.isLocationServiceEnabled();
+      if (!isGpsOn) return null;
+
+      // Coba ambil posisi terakhir terlebih dahulu untuk kecepatan respons
       final lastPos = await Geolocator.getLastKnownPosition();
 
       try {

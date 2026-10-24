@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
@@ -44,6 +44,15 @@ class DatabaseHelper {
       path,
       version: 1,
       onCreate: _createDB,
+      onOpen: (db) async {
+        try {
+          await db.delete(
+            'vehicles',
+            where: 'LOWER(name) LIKE ? OR LOWER(brand) LIKE ?',
+            whereArgs: ['%nmax%', '%nmax%'],
+          );
+        } catch (_) {}
+      },
     );
   }
 
@@ -285,32 +294,72 @@ class DatabaseHelper {
     // === VEHICLE CRUD & SYNC ===
 
   // Mengambil kendaraan dari database lokal dan menyinkronkan dengan backend API jika online.
-  Future<List<Vehicle>> getVehicles() async {
+  Future<List<Vehicle>> getVehicles({int? userId}) async {
     final db = await database;
-    final localMaps = await db.query('vehicles', orderBy: 'isPrimary DESC, id ASC');
-    List<Vehicle> list = (localMaps as List)
-        .map((m) => Vehicle.fromMap(Map<String, dynamic>.from(m)))
-        .toList();
+    final prefs = await SharedPreferences.getInstance();
+    final activeId = prefs.getInt('active_user_id');
+    final currentUserId = userId ?? activeId;
 
+    // Bersihkan data dummy Yamaha NMAX warisan jika masih tersisa di database
     try {
-      final remoteList = await ApiService.instance.getVehicles(userId: 1);
+      await db.delete(
+        'vehicles',
+        where: 'LOWER(name) LIKE ? OR LOWER(brand) LIKE ?',
+        whereArgs: ['%nmax%', '%nmax%'],
+      );
+    } catch (_) {}
+
+    if (currentUserId == null) {
+      return [];
+    }
+
+    final userVehiclesKey = 'user_vehicles_$currentUserId';
+    List<String>? userVehicleIds = prefs.getStringList(userVehiclesKey);
+
+    if (userVehicleIds == null) {
+      userVehicleIds = [];
+      await prefs.setStringList(userVehiclesKey, userVehicleIds);
+    }
+
+    // Sinkronisasi dengan backend API berdasarkan currentUserId yang aktif
+    try {
+      final remoteList = await ApiService.instance.getVehicles(userId: currentUserId);
       if (remoteList.isNotEmpty) {
         for (final rv in remoteList) {
+          if (rv.name.toLowerCase().contains('nmax') || rv.brand.toLowerCase().contains('nmax')) {
+            continue;
+          }
           final existing = await db.query('vehicles', where: 'id = ?', whereArgs: [rv.id], limit: 1);
           if ((existing as List).isEmpty) {
             await db.insert('vehicles', rv.toMap());
           } else {
             await db.update('vehicles', rv.toMap(), where: 'id = ?', whereArgs: [rv.id]);
           }
+          if (!userVehicleIds.contains(rv.id.toString())) {
+            userVehicleIds.add(rv.id.toString());
+          }
         }
-        final updatedMaps = await db.query('vehicles', orderBy: 'isPrimary DESC, id ASC');
-        list = (updatedMaps as List)
-            .map((m) => Vehicle.fromMap(Map<String, dynamic>.from(m)))
-            .toList();
+        await prefs.setStringList(userVehiclesKey, userVehicleIds);
       }
     } catch (_) {
       // Mode offline: gunakan data lokal
     }
+
+    if (userVehicleIds.isEmpty) {
+      return [];
+    }
+
+    final localMaps = await db.query(
+      'vehicles',
+      where: 'id IN (${userVehicleIds.map((_) => '?').join(',')})',
+      whereArgs: userVehicleIds.map(int.parse).toList(),
+      orderBy: 'isPrimary DESC, id ASC',
+    );
+
+    List<Vehicle> list = (localMaps as List)
+        .map((m) => Vehicle.fromMap(Map<String, dynamic>.from(m)))
+        .where((v) => !v.name.toLowerCase().contains('nmax') && !v.brand.toLowerCase().contains('nmax'))
+        .toList();
 
     list.sort((a, b) {
       if (a.isPrimary != b.isPrimary) {
@@ -323,8 +372,8 @@ class DatabaseHelper {
   }
 
   // Mengambil kendaraan utama
-  Future<Vehicle?> getPrimaryVehicle() async {
-    final vehicles = await getVehicles();
+  Future<Vehicle?> getPrimaryVehicle({int? userId}) async {
+    final vehicles = await getVehicles(userId: userId);
     if (vehicles.isEmpty) return null;
     for (final vehicle in vehicles) {
       if (vehicle.isPrimary) return vehicle;
@@ -333,20 +382,36 @@ class DatabaseHelper {
   }
 
   // Menambahkan kendaraan secara offline-first dan sync ke backend jika online
-  Future<int> insertVehicle(Vehicle vehicle) async {
+  Future<int> insertVehicle(Vehicle vehicle, {int? userId}) async {
     final db = await database;
-    if (vehicle.isPrimary) {
-      await db.update('vehicles', {'isPrimary': 0});
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
+
+    final userVehiclesKey = 'user_vehicles_$currentUserId';
+    final userVehicleIds = prefs.getStringList(userVehiclesKey) ?? [];
+
+    if (vehicle.isPrimary && userVehicleIds.isNotEmpty) {
+      await db.update(
+        'vehicles',
+        {'isPrimary': 0},
+        where: 'id IN (${userVehicleIds.map((_) => '?').join(',')})',
+        whereArgs: userVehicleIds.map(int.parse).toList(),
+      );
     }
 
     final localMap = vehicle.toMap();
     localMap['isSynced'] = 0;
     final localId = await db.insert('vehicles', localMap);
 
+    if (!userVehicleIds.contains(localId.toString())) {
+      userVehicleIds.add(localId.toString());
+      await prefs.setStringList(userVehiclesKey, userVehicleIds);
+    }
+
     try {
       final remoteVehicle = await ApiService.instance.addVehicle(
         vehicle: vehicle,
-        userId: 1,
+        userId: currentUserId,
       );
       if (remoteVehicle.id != null) {
         await db.update(
@@ -364,15 +429,19 @@ class DatabaseHelper {
   }
 
   // Memperbarui data kendaraan secara offline-first
-  Future<int> updateVehicle(Vehicle vehicle) async {
+  Future<int> updateVehicle(Vehicle vehicle, {int? userId}) async {
     final db = await database;
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
+    final userVehiclesKey = 'user_vehicles_$currentUserId';
+    final userVehicleIds = prefs.getStringList(userVehiclesKey) ?? [];
 
-    if (vehicle.isPrimary && vehicle.id != null) {
+    if (vehicle.isPrimary && vehicle.id != null && userVehicleIds.isNotEmpty) {
       await db.update(
         'vehicles',
         {'isPrimary': 0},
-        where: 'id != ?',
-        whereArgs: [vehicle.id],
+        where: 'id IN (${userVehicleIds.map((_) => '?').join(',')}) AND id != ?',
+        whereArgs: [...userVehicleIds.map(int.parse), vehicle.id],
       );
     }
 
@@ -389,7 +458,7 @@ class DatabaseHelper {
     try {
       final remote = await ApiService.instance.updateVehicle(
         vehicle: vehicle,
-        userId: 1,
+        userId: currentUserId,
       );
       if (remote != null) {
         await db.update(
@@ -407,8 +476,10 @@ class DatabaseHelper {
   }
 
   // Menghapus data kendaraan lokal dan server
-  Future<int> deleteVehicle(int id) async {
+  Future<int> deleteVehicle(int id, {int? userId}) async {
     final db = await database;
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
 
     final deleted = await db.delete(
       'vehicles',
@@ -416,13 +487,20 @@ class DatabaseHelper {
       whereArgs: [id],
     );
 
-    final remaining = await getVehicles();
+    final userVehiclesKey = 'user_vehicles_$currentUserId';
+    final userVehicleIds = prefs.getStringList(userVehiclesKey);
+    if (userVehicleIds != null) {
+      userVehicleIds.remove(id.toString());
+      await prefs.setStringList(userVehiclesKey, userVehicleIds);
+    }
+
+    final remaining = await getVehicles(userId: currentUserId);
     if (remaining.isNotEmpty && !remaining.any((vehicle) => vehicle.isPrimary)) {
-      await setPrimaryVehicle(remaining.first.id!);
+      await setPrimaryVehicle(remaining.first.id!, userId: currentUserId);
     }
 
     try {
-      await ApiService.instance.deleteVehicle(id: id, userId: 1);
+      await ApiService.instance.deleteVehicle(id: id, userId: currentUserId);
     } catch (e) {
       debugPrint('deleteVehicle lokal berhasil, server offline: $e');
     }
@@ -431,10 +509,22 @@ class DatabaseHelper {
   }
 
   // Mengatur kendaraan utama
-  Future<void> setPrimaryVehicle(int id) async {
+  Future<void> setPrimaryVehicle(int id, {int? userId}) async {
     final db = await database;
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
 
-    await db.update('vehicles', {'isPrimary': 0});
+    final userVehiclesKey = 'user_vehicles_$currentUserId';
+    final userVehicleIds = prefs.getStringList(userVehiclesKey) ?? [id.toString()];
+
+    if (userVehicleIds.isNotEmpty) {
+      await db.update(
+        'vehicles',
+        {'isPrimary': 0},
+        where: 'id IN (${userVehicleIds.map((_) => '?').join(',')})',
+        whereArgs: userVehicleIds.map(int.parse).toList(),
+      );
+    }
     await db.update(
       'vehicles',
       {'isPrimary': 1},
@@ -446,7 +536,7 @@ class DatabaseHelper {
       final v = (await db.query('vehicles', where: 'id = ?', whereArgs: [id], limit: 1)) as List;
       if (v.isNotEmpty) {
         final vehicle = Vehicle.fromMap(Map<String, dynamic>.from(v.first));
-        await ApiService.instance.updateVehicle(vehicle: vehicle, userId: 1);
+        await ApiService.instance.updateVehicle(vehicle: vehicle, userId: currentUserId);
       }
     } catch (_) {}
   }
@@ -519,6 +609,12 @@ class DatabaseHelper {
   Future<int> deleteReminder(int id) async {
     final db = await database;
     return await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> updateReminder(ReminderItem item) async {
+    if (item.id == null) return 0;
+    final db = await database;
+    return await db.update('reminders', item.toMap(), where: 'id = ?', whereArgs: [item.id]);
   }
 
   // === TRIPS ===
