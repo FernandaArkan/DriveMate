@@ -160,10 +160,10 @@ try {
 
         if ($curlError !== '') {
             error_log("Gemini cURL Error ($curlErrno): $curlError");
-            // Gunakan HTTP 502 (Bad Gateway), BUKAN 504.
-            // Cloudflare/SnapDeploy proxy akan mencegat status code 504 dari origin
-            // dan menggantinya dengan halaman teks mentah 'error code: 504'.
-            http_response_code(502);
+            // Gunakan HTTP 500 (Internal Server Error), BUKAN 502/504.
+            // Cloudflare/SnapDeploy proxy akan mencegat status code 502 dan 504 dari origin
+            // dan menggantinya dengan halaman teks mentah 'error code: 502/504'.
+            http_response_code(500);
             echo json_encode([
                 'success' => false,
                 'message' => 'Gagal terhubung ke penyedia AI (Timeout/Network): ' . $curlError,
@@ -199,12 +199,11 @@ try {
         } else {
             $apiErrMsg = $resJson['error']['message'] ?? "Penyedia Gemini mengembalikan status code $httpCode";
             error_log("Gemini API Error ($httpCode): $apiErrMsg");
-            // Hindari 504 agar tidak ditimpa oleh proxy
-            $statusCode = ($httpCode >= 400 && $httpCode < 600 && $httpCode !== 504) ? $httpCode : 502;
-            http_response_code($statusCode);
+            // Gunakan HTTP 500 agar pesan JSON error tidak ditimpa oleh proxy Cloudflare/SnapDeploy
+            http_response_code(500);
             echo json_encode([
                 'success' => false,
-                'message' => 'Respon error dari Gemini API: ' . $apiErrMsg,
+                'message' => 'Respon error dari Gemini API (' . $httpCode . '): ' . $apiErrMsg,
             ]);
             exit;
         }
@@ -260,7 +259,7 @@ try {
 
         if ($curlError !== '') {
             error_log("OpenAI cURL Error: $curlError");
-            http_response_code(502);
+            http_response_code(500);
             echo json_encode([
                 'success' => false,
                 'message' => 'Gagal terhubung ke OpenAI: ' . $curlError,
@@ -275,8 +274,7 @@ try {
         } else {
             $apiErrMsg = $resJson['error']['message'] ?? "OpenAI error code $httpCode";
             error_log("OpenAI API Error ($httpCode): $apiErrMsg");
-            $statusCode = ($httpCode >= 400 && $httpCode < 600 && $httpCode !== 504) ? $httpCode : 502;
-            http_response_code($statusCode);
+            http_response_code(500);
             echo json_encode([
                 'success' => false,
                 'message' => 'Respon error dari OpenAI: ' . $apiErrMsg,
