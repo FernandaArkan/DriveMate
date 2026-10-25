@@ -78,10 +78,10 @@ try {
     // ==========================================
     if ($provider === 'gemini') {
         $model = !empty($config['ai_model']) ? trim((string)$config['ai_model']) : 'gemini-3.8-flash';
+        // Gunakan URL endpoint murni tanpa query string key agar kredensial tidak pernah bocor ke URL/log
         $apiUrl = sprintf(
-            'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s',
-            urlencode($model),
-            urlencode($geminiApiKey)
+            'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent',
+            urlencode($model)
         );
 
         $contents = [];
@@ -114,7 +114,7 @@ try {
                                str_contains($model, 'thinking');
 
         $generationConfig = [
-            'maxOutputTokens' => 800,
+            'maxOutputTokens' => 1200,
         ];
 
         if ($isGemini3OrThinking) {
@@ -146,27 +146,78 @@ try {
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'x-goog-api-key: ' . $geminiApiKey,
+                'Expect:',
+                'User-Agent: DriveMate-Backend/1.0',
+            ],
             CURLOPT_TIMEOUT => 30,
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
 
         $rawResponse = curl_exec($ch);
-        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $info = curl_getinfo($ch);
+        $httpCode = (int) ($info['http_code'] ?? 0);
+        $totalTime = round((float) ($info['total_time'] ?? 0), 3);
+        $namelookupTime = round((float) ($info['namelookup_time'] ?? 0), 3);
+        $connectTime = round((float) ($info['connect_time'] ?? 0), 3);
+        $appconnectTime = round((float) ($info['appconnect_time'] ?? 0), 3);
+        $starttransferTime = round((float) ($info['starttransfer_time'] ?? 0), 3);
         $curlError = curl_error($ch);
         $curlErrno = curl_errno($ch);
         curl_close($ch);
 
+        // Bedakan kategori kegagalan secara spesifik
+        $failureType = null;
+        if ($curlErrno !== 0) {
+            if ($connectTime === 0.0 || $appconnectTime === 0.0) {
+                // Timeout atau kegagalan saat proses DNS/TCP/TLS handshake (< 10 detik)
+                $failureType = 'connection_timeout';
+            } elseif ($starttransferTime === 0.0 && ($curlErrno === 28 || str_contains($curlError, 'timed out'))) {
+                // Koneksi & TLS berhasil, namun menunggu respons upstream melebihi 30 detik (0 bytes received)
+                $failureType = 'upstream_response_timeout';
+            } else {
+                $failureType = 'curl_error_' . $curlErrno;
+            }
+        } elseif ($httpCode < 200 || $httpCode >= 300) {
+            $failureType = 'upstream_http_' . $httpCode;
+        }
+
+        $diagnostic = [
+            'provider' => 'gemini',
+            'model' => $model,
+            'failure_type' => $failureType,
+            'curl_errno' => $curlErrno,
+            'http_code' => $httpCode,
+            'timing' => [
+                'total_sec' => $totalTime,
+                'dns_sec' => $namelookupTime,
+                'tcp_connect_sec' => $connectTime,
+                'tls_handshake_sec' => $appconnectTime,
+                'first_byte_sec' => $starttransferTime,
+            ],
+        ];
+
         if ($curlError !== '') {
-            error_log("Gemini cURL Error ($curlErrno): $curlError");
-            // Gunakan HTTP 500 (Internal Server Error), BUKAN 502/504.
-            // Cloudflare/SnapDeploy proxy akan mencegat status code 502 dan 504 dari origin
-            // dan menggantinya dengan halaman teks mentah 'error code: 502/504'.
+            error_log(sprintf(
+                "Gemini cURL Error [%s] (errno %d) in %.3fs (DNS: %.3fs, Connect: %.3fs, TLS: %.3fs, TTFB: %.3fs): %s",
+                $failureType ?? 'unknown',
+                $curlErrno,
+                $totalTime,
+                $namelookupTime,
+                $connectTime,
+                $appconnectTime,
+                $starttransferTime,
+                $curlError
+            ));
+
             http_response_code(500);
             echo json_encode([
                 'success' => false,
-                'message' => 'Gagal terhubung ke penyedia AI (Timeout/Network): ' . $curlError,
+                'message' => 'Gagal terhubung ke penyedia AI: ' . $curlError,
+                'diagnostic' => $diagnostic,
             ]);
             exit;
         }
@@ -198,12 +249,21 @@ try {
             }
         } else {
             $apiErrMsg = $resJson['error']['message'] ?? "Penyedia Gemini mengembalikan status code $httpCode";
-            error_log("Gemini API Error ($httpCode): $apiErrMsg");
-            // Gunakan HTTP 500 agar pesan JSON error tidak ditimpa oleh proxy Cloudflare/SnapDeploy
+            // Samarkan jika ada query string atau format key dalam pesan error Google
+            $cleanErrMsg = preg_replace('/key=[a-zA-Z0-9_\-]+/', 'key=***MASKED***', $apiErrMsg);
+
+            error_log(sprintf(
+                "Gemini Upstream Error HTTP %d in %.3fs: %s",
+                $httpCode,
+                $totalTime,
+                $cleanErrMsg
+            ));
+
             http_response_code(500);
             echo json_encode([
                 'success' => false,
-                'message' => 'Respon error dari Gemini API (' . $httpCode . '): ' . $apiErrMsg,
+                'message' => 'Respon error dari Gemini API (' . $httpCode . '): ' . $cleanErrMsg,
+                'diagnostic' => $diagnostic,
             ]);
             exit;
         }
@@ -290,10 +350,14 @@ try {
         exit;
     }
 
-    echo json_encode([
+    $successResponse = [
         'success' => true,
         'reply' => $replyText,
-    ]);
+    ];
+    if (isset($diagnostic) && is_array($diagnostic)) {
+        $successResponse['diagnostic'] = $diagnostic;
+    }
+    echo json_encode($successResponse);
 } catch (Throwable $e) {
     error_log('AI endpoint error: ' . $e->getMessage());
 
