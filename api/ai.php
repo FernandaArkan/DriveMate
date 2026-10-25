@@ -77,7 +77,7 @@ try {
     // 1. Integrasi Google Gemini API
     // ==========================================
     if ($provider === 'gemini') {
-        $model = !empty($config['ai_model']) ? trim((string)$config['ai_model']) : 'gemini-1.5-flash';
+        $model = !empty($config['ai_model']) ? trim((string)$config['ai_model']) : 'gemini-3.8-flash';
         $apiUrl = sprintf(
             'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s',
             urlencode($model),
@@ -149,6 +149,7 @@ try {
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_TIMEOUT => 30,
             CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
 
@@ -249,6 +250,7 @@ try {
             ],
             CURLOPT_TIMEOUT => 30,
             CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
 
