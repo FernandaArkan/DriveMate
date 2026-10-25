@@ -2,6 +2,11 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 class ServiceRecord {
+  static const String genesisHash =
+      '0000000000000000000000000000000000000000000000000000000000000000';
+  static const String legacyGenesisHash =
+      '00000000000000000000000000000000';
+
   ServiceRecord({
     this.id,
     required this.vehicleId,
@@ -24,6 +29,8 @@ class ServiceRecord {
           mileage: mileage,
           workshop: workshop,
           cost: cost,
+          notes: notes,
+          status: status,
           prevHash: prevHash,
           timestamp: timestamp ?? date,
         );
@@ -50,6 +57,25 @@ class ServiceRecord {
     required int mileage,
     required String workshop,
     required int cost,
+    String notes = '',
+    String status = 'Selesai',
+    required String prevHash,
+    required String timestamp,
+  }) {
+    final rawData = '$vehicleId|$title|$serviceType|$date|$mileage|$workshop|$cost|$notes|$status|$prevHash|$timestamp';
+    final bytes = utf8.encode(rawData);
+    return sha256.convert(bytes).toString();
+  }
+
+  /// Formula legacy (V1) tanpa notes & status untuk kompatibilitas data lama
+  static String calculateLegacyHash({
+    required int vehicleId,
+    required String title,
+    required String serviceType,
+    required String date,
+    required int mileage,
+    required String workshop,
+    required int cost,
     required String prevHash,
     required String timestamp,
   }) {
@@ -59,7 +85,24 @@ class ServiceRecord {
   }
 
   bool verifyHash() {
+    // 1. Verifikasi dengan formula terbaru (melindungi notes dan status)
     final expectedHash = calculateHash(
+      vehicleId: vehicleId,
+      title: title,
+      serviceType: serviceType,
+      date: date,
+      mileage: mileage,
+      workshop: workshop,
+      cost: cost,
+      notes: notes,
+      status: status,
+      prevHash: prevHash,
+      timestamp: timestamp ?? date,
+    );
+    if (hash == expectedHash) return true;
+
+    // 2. Kompatibilitas mundur: verifikasi data lama dengan formula legacy
+    final legacyHash = calculateLegacyHash(
       vehicleId: vehicleId,
       title: title,
       serviceType: serviceType,
@@ -70,7 +113,7 @@ class ServiceRecord {
       prevHash: prevHash,
       timestamp: timestamp ?? date,
     );
-    return hash == expectedHash;
+    return hash == legacyHash;
   }
 
   Map<String, dynamic> toMap() {
@@ -103,7 +146,7 @@ class ServiceRecord {
       cost: map['cost'] as int? ?? 0,
       notes: map['notes'] as String? ?? '',
       status: map['status'] as String? ?? 'Selesai',
-      prevHash: map['prevHash'] as String? ?? '00000000000000000000000000000000',
+      prevHash: map['prevHash'] as String? ?? genesisHash,
       hash: map['hash'] as String?,
       timestamp: map['timestamp'] as String?,
     );

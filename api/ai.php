@@ -77,7 +77,7 @@ try {
     // 1. Integrasi Google Gemini API
     // ==========================================
     if ($provider === 'gemini') {
-        $model = !empty($config['ai_model']) ? $config['ai_model'] : 'gemini-1.5-flash';
+        $model = !empty($config['ai_model']) ? trim((string)$config['ai_model']) : 'gemini-1.5-flash';
         $apiUrl = sprintf(
             'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s',
             urlencode($model),
@@ -104,6 +104,31 @@ try {
             'parts' => [['text' => $message]],
         ];
 
+        // Konfigurasi generasi output
+        // Model Gemini 3 (seperti Gemini 3.8 Flash atau model dengan kemampuan thinking)
+        // memerlukan thinkingConfig dengan thinkingLevel: low untuk meminimalkan waktu penalaran,
+        // serta TIDAK menggunakan parameter temperature (dihapus sesuai dokumentasi Gemini 3.8).
+        $isGemini3OrThinking = str_contains($model, '3.') || 
+                               str_contains($model, '3-') || 
+                               str_contains($model, 'gemini-3') || 
+                               str_contains($model, 'thinking');
+
+        $generationConfig = [
+            'maxOutputTokens' => 800,
+        ];
+
+        if ($isGemini3OrThinking) {
+            // Sesuai dokumentasi Gemini 3.8 Flash:
+            // 1. thinkingConfig dengan thinkingLevel: low
+            // 2. Parameter temperature dihapus (tidak disertakan)
+            $generationConfig['thinkingConfig'] = [
+                'thinkingLevel' => 'low',
+            ];
+        } else {
+            // Model legacy non-thinking (seperti gemini-1.5-flash)
+            $generationConfig['temperature'] = 0.7;
+        }
+
         $payload = [
             'systemInstruction' => [
                 'parts' => [
@@ -112,10 +137,7 @@ try {
                 ],
             ],
             'contents' => $contents,
-            'generationConfig' => [
-                'temperature' => 0.7,
-                'maxOutputTokens' => 800,
-            ],
+            'generationConfig' => $generationConfig,
         ];
 
         $ch = curl_init();
@@ -125,18 +147,23 @@ try {
             CURLOPT_POSTFIELDS => json_encode($payload),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-            CURLOPT_TIMEOUT => 12,
-            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
 
         $rawResponse = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
+        $curlErrno = curl_errno($ch);
         curl_close($ch);
 
         if ($curlError !== '') {
-            http_response_code(504);
+            error_log("Gemini cURL Error ($curlErrno): $curlError");
+            // Gunakan HTTP 502 (Bad Gateway), BUKAN 504.
+            // Cloudflare/SnapDeploy proxy akan mencegat status code 504 dari origin
+            // dan menggantinya dengan halaman teks mentah 'error code: 504'.
+            http_response_code(502);
             echo json_encode([
                 'success' => false,
                 'message' => 'Gagal terhubung ke penyedia AI (Timeout/Network): ' . $curlError,
@@ -146,11 +173,35 @@ try {
 
         $resJson = json_decode($rawResponse, true);
 
-        if ($httpCode >= 200 && $httpCode < 300 && isset($resJson['candidates'][0]['content']['parts'][0]['text'])) {
-            $replyText = trim($resJson['candidates'][0]['content']['parts'][0]['text']);
+        if ($httpCode >= 200 && $httpCode < 300) {
+            // Ekstrak teks murni dari respons, lewati semua blok internal reasoning (thought)
+            $textParts = [];
+            if (isset($resJson['candidates'][0]['content']['parts']) && is_array($resJson['candidates'][0]['content']['parts'])) {
+                foreach ($resJson['candidates'][0]['content']['parts'] as $part) {
+                    $isThought = !empty($part['thought']) || (isset($part['thought']) && $part['thought'] === true);
+                    if ($isThought) {
+                        continue;
+                    }
+                    if (isset($part['text']) && is_string($part['text'])) {
+                        $cleanText = trim($part['text']);
+                        if ($cleanText !== '') {
+                            $textParts[] = $cleanText;
+                        }
+                    }
+                }
+            }
+
+            if (!empty($textParts)) {
+                $replyText = implode("\n\n", $textParts);
+            } else {
+                $replyText = 'Tidak ada jawaban yang dihasilkan oleh model AI.';
+            }
         } else {
             $apiErrMsg = $resJson['error']['message'] ?? "Penyedia Gemini mengembalikan status code $httpCode";
-            http_response_code($httpCode >= 400 && $httpCode < 600 ? $httpCode : 502);
+            error_log("Gemini API Error ($httpCode): $apiErrMsg");
+            // Hindari 504 agar tidak ditimpa oleh proxy
+            $statusCode = ($httpCode >= 400 && $httpCode < 600 && $httpCode !== 504) ? $httpCode : 502;
+            http_response_code($statusCode);
             echo json_encode([
                 'success' => false,
                 'message' => 'Respon error dari Gemini API: ' . $apiErrMsg,
@@ -197,18 +248,19 @@ try {
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $openaiApiKey,
             ],
-            CURLOPT_TIMEOUT => 12,
-            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
 
         $rawResponse = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
         curl_close($ch);
 
         if ($curlError !== '') {
-            http_response_code(504);
+            error_log("OpenAI cURL Error: $curlError");
+            http_response_code(502);
             echo json_encode([
                 'success' => false,
                 'message' => 'Gagal terhubung ke OpenAI: ' . $curlError,
@@ -222,7 +274,9 @@ try {
             $replyText = trim($resJson['choices'][0]['message']['content']);
         } else {
             $apiErrMsg = $resJson['error']['message'] ?? "OpenAI error code $httpCode";
-            http_response_code($httpCode >= 400 && $httpCode < 600 ? $httpCode : 502);
+            error_log("OpenAI API Error ($httpCode): $apiErrMsg");
+            $statusCode = ($httpCode >= 400 && $httpCode < 600 && $httpCode !== 504) ? $httpCode : 502;
+            http_response_code($statusCode);
             echo json_encode([
                 'success' => false,
                 'message' => 'Respon error dari OpenAI: ' . $apiErrMsg,

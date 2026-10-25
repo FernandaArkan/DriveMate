@@ -42,16 +42,14 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
-      onOpen: (db) async {
-        try {
-          await db.delete(
-            'vehicles',
-            where: 'LOWER(name) LIKE ? OR LOWER(brand) LIKE ?',
-            whereArgs: ['%nmax%', '%nmax%'],
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE vehicles ADD COLUMN serverId INTEGER',
           );
-        } catch (_) {}
+        }
       },
     );
   }
@@ -71,6 +69,7 @@ class DatabaseHelper {
         lastServiceDate TEXT,
         taxDueDate TEXT,
         createdAt TEXT NOT NULL,
+        serverId INTEGER,
         isSynced INTEGER NOT NULL DEFAULT 1
       )
     ''');
@@ -390,6 +389,8 @@ class DatabaseHelper {
     final userVehiclesKey = 'user_vehicles_$currentUserId';
     final userVehicleIds = prefs.getStringList(userVehiclesKey) ?? [];
 
+    // Jika kendaraan baru menjadi kendaraan utama,
+    // hapus status utama dari kendaraan milik pengguna ini.
     if (vehicle.isPrimary && userVehicleIds.isNotEmpty) {
       await db.update(
         'vehicles',
@@ -399,81 +400,98 @@ class DatabaseHelper {
       );
     }
 
+    // Simpan kendaraan ke database lokal terlebih dahulu.
     final localMap = vehicle.toMap();
     localMap['isSynced'] = 0;
+
+    // ID ini adalah ID lokal SQLite, bukan ID server.
     final localId = await db.insert('vehicles', localMap);
 
+    // Simpan ID lokal ke daftar kendaraan pengguna.
     if (!userVehicleIds.contains(localId.toString())) {
       userVehicleIds.add(localId.toString());
       await prefs.setStringList(userVehiclesKey, userVehicleIds);
     }
 
+    // Coba sinkronkan kendaraan ke backend.
     try {
       final remoteVehicle = await ApiService.instance.addVehicle(
         vehicle: vehicle,
         userId: currentUserId,
       );
+
+      // Simpan ID server tanpa mengubah ID lokal.
       if (remoteVehicle.id != null) {
         await db.update(
           'vehicles',
-          {'isSynced': 1},
+          {
+            'serverId': remoteVehicle.id,
+            'isSynced': 1,
+          },
           where: 'id = ?',
           whereArgs: [localId],
         );
       }
     } catch (e) {
+      // Jika gagal terhubung, kendaraan tetap tersimpan secara lokal.
       debugPrint('insertVehicle disimpan lokal (offline): $e');
     }
 
     return localId;
   }
 
-  // Memperbarui data kendaraan secara offline-first
-  Future<int> updateVehicle(Vehicle vehicle, {int? userId}) async {
-    final db = await database;
-    final prefs = await SharedPreferences.getInstance();
-    final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
-    final userVehiclesKey = 'user_vehicles_$currentUserId';
-    final userVehicleIds = prefs.getStringList(userVehiclesKey) ?? [];
 
-    if (vehicle.isPrimary && vehicle.id != null && userVehicleIds.isNotEmpty) {
-      await db.update(
-        'vehicles',
-        {'isPrimary': 0},
-        where: 'id IN (${userVehicleIds.map((_) => '?').join(',')}) AND id != ?',
-        whereArgs: [...userVehicleIds.map(int.parse), vehicle.id],
-      );
-    }
+Future<int> updateVehicle(Vehicle vehicle, {int? userId}) async {
+  final db = await database;
+  final prefs = await SharedPreferences.getInstance();
+  final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
 
-    final localMap = vehicle.toMap();
-    localMap['isSynced'] = 0;
+  if (vehicle.id == null) {
+    throw ArgumentError('ID lokal kendaraan tidak boleh kosong.');
+  }
 
-    final updated = await db.update(
-      'vehicles',
-      localMap,
-      where: 'id = ?',
-      whereArgs: [vehicle.id],
+  // Simpan perubahan menggunakan ID lokal SQLite.
+  final localMap = vehicle.toMap();
+  localMap['isSynced'] = 0;
+
+  await db.update(
+    'vehicles',
+    localMap,
+    where: 'id = ?',
+    whereArgs: [vehicle.id],
+  );
+
+  // Jika tidak memiliki ID server, biarkan menunggu sinkronisasi.
+  if (vehicle.serverId == null) {
+    return vehicle.id!;
+  }
+
+  // Kirim perubahan ke backend menggunakan ID server.
+  try {
+    final updatedVehicle = await ApiService.instance.updateVehicle(
+      vehicle: vehicle,
+      userId: currentUserId,
     );
 
-    try {
-      final remote = await ApiService.instance.updateVehicle(
-        vehicle: vehicle,
-        userId: currentUserId,
+    if (updatedVehicle != null) {
+      await db.update(
+        'vehicles',
+        {
+          'serverId': updatedVehicle.id ?? vehicle.serverId,
+          'isSynced': 1,
+        },
+        where: 'id = ?',
+        whereArgs: [vehicle.id],
       );
-      if (remote != null) {
-        await db.update(
-          'vehicles',
-          {'isSynced': 1},
-          where: 'id = ?',
-          whereArgs: [vehicle.id],
-        );
-      }
-    } catch (e) {
-      debugPrint('updateVehicle disimpan lokal (offline): $e');
     }
-
-    return updated;
+  } catch (e) {
+    debugPrint('updateVehicle tersimpan lokal; sinkronisasi tertunda: $e');
   }
+
+  return vehicle.id!;
+}
+
+
 
   // Menghapus data kendaraan lokal dan server
   Future<int> deleteVehicle(int id, {int? userId}) async {
@@ -481,28 +499,63 @@ class DatabaseHelper {
     final prefs = await SharedPreferences.getInstance();
     final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
 
+    // Ambil data kendaraan sebelum dihapus untuk mendapatkan serverId.
+    final vehicleRows = await db.query(
+      'vehicles',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (vehicleRows.isEmpty) {
+      return 0;
+    }
+
+    final vehicleData = Map<String, dynamic>.from(vehicleRows.first);
+    final serverId = vehicleData['serverId'] == null
+        ? null
+        : int.tryParse(vehicleData['serverId'].toString());
+
+    // Hapus data berdasarkan ID lokal SQLite.
     final deleted = await db.delete(
       'vehicles',
       where: 'id = ?',
       whereArgs: [id],
     );
 
+    // Hapus ID lokal dari daftar kendaraan pengguna.
     final userVehiclesKey = 'user_vehicles_$currentUserId';
     final userVehicleIds = prefs.getStringList(userVehiclesKey);
+
     if (userVehicleIds != null) {
       userVehicleIds.remove(id.toString());
       await prefs.setStringList(userVehiclesKey, userVehicleIds);
     }
 
+    // Jika masih ada kendaraan tetapi tidak ada yang utama,
+    // jadikan kendaraan pertama sebagai kendaraan utama.
     final remaining = await getVehicles(userId: currentUserId);
-    if (remaining.isNotEmpty && !remaining.any((vehicle) => vehicle.isPrimary)) {
-      await setPrimaryVehicle(remaining.first.id!, userId: currentUserId);
+
+    if (remaining.isNotEmpty &&
+        !remaining.any((vehicle) => vehicle.isPrimary)) {
+      await setPrimaryVehicle(
+        remaining.first.id!,
+        userId: currentUserId,
+      );
     }
 
-    try {
-      await ApiService.instance.deleteVehicle(id: id, userId: currentUserId);
-    } catch (e) {
-      debugPrint('deleteVehicle lokal berhasil, server offline: $e');
+    // Hapus kendaraan di server menggunakan ID server.
+    if (serverId != null) {
+      try {
+        await ApiService.instance.deleteVehicle(
+          id: serverId,
+          userId: currentUserId,
+        );
+      } catch (e) {
+        debugPrint(
+          'Kendaraan dihapus lokal, tetapi penghapusan server gagal: $e',
+        );
+      }
     }
 
     return deleted;
@@ -541,20 +594,78 @@ class DatabaseHelper {
     } catch (_) {}
   }
 
-  // Sinkronisasi data kendaraan lokal yang tertunda ke PostgreSQL backend
-  Future<int> syncPendingVehicles({int userId = 1}) async {
-    final db = await database;
-    final unsynced = await db.query('vehicles', where: 'isSynced = ?', whereArgs: [0]);
-    if ((unsynced as List).isEmpty) return 0;
 
-    final list = unsynced.map((m) => Vehicle.fromMap(Map<String, dynamic>.from(m))).toList();
-    final ok = await ApiService.instance.syncVehicles(vehicles: list, userId: userId);
-    if (ok) {
-      await db.update('vehicles', {'isSynced': 1}, where: 'isSynced = ?', whereArgs: [0]);
-      return list.length;
+  // Sinkronisasi kendaraan lokal yang tertunda ke PostgreSQL backend
+  Future<int> syncPendingVehicles({int? userId}) async {
+    final db = await database;
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = userId ?? prefs.getInt('active_user_id') ?? 1;
+
+    final unsynced = await db.query(
+      'vehicles',
+      where: 'isSynced = ?',
+      whereArgs: [0],
+    );
+
+    if (unsynced.isEmpty) return 0;
+
+    int syncedCount = 0;
+
+    for (final row in unsynced) {
+      final map = Map<String, dynamic>.from(row);
+      final vehicle = Vehicle.fromMap(map);
+
+      try {
+        // Kendaraan yang belum memiliki ID server perlu dibuat di server.
+        if (vehicle.serverId == null) {
+          final remoteVehicle = await ApiService.instance.addVehicle(
+            vehicle: vehicle,
+            userId: currentUserId,
+          );
+
+          if (remoteVehicle.id != null) {
+            await db.update(
+              'vehicles',
+              {
+                'serverId': remoteVehicle.id,
+                'isSynced': 1,
+              },
+              where: 'id = ?',
+              whereArgs: [vehicle.id],
+            );
+
+            syncedCount++;
+          }
+        } else {
+          // Kendaraan yang sudah memiliki ID server diperbarui.
+          final updatedVehicle = await ApiService.instance.updateVehicle(
+            vehicle: vehicle,
+            userId: currentUserId,
+          );
+
+          if (updatedVehicle != null) {
+            await db.update(
+              'vehicles',
+              {
+                'isSynced': 1,
+              },
+              where: 'id = ?',
+              whereArgs: [vehicle.id],
+            );
+
+            syncedCount++;
+          }
+        }
+      } catch (e) {
+        debugPrint(
+          'Sinkronisasi kendaraan lokal ${vehicle.id} gagal: $e',
+        );
+      }
     }
-    return 0;
+
+    return syncedCount;
   }
+
 
   // === SERVICE RECORDS CRUD & BLOCKCHAIN ===
   Future<List<ServiceRecord>> getServiceRecords({int? vehicleId}) async {
@@ -572,18 +683,54 @@ class DatabaseHelper {
 
   Future<bool> verifyBlockchainIntegrity({int? vehicleId}) async {
     final db = await database;
-    final maps = vehicleId != null
-        ? await db.query('service_records', where: 'vehicleId = ?', whereArgs: [vehicleId], orderBy: 'id ASC')
-        : await db.query('service_records', orderBy: 'id ASC');
+    if (vehicleId != null) {
+      return _verifyChainForVehicle(db, vehicleId);
+    }
+
+    // Jika vehicleId tidak ditentukan, verifikasi seluruh rantai kendaraan secara independen
+    final allRecords = await db.query('service_records');
+    if ((allRecords as List).isEmpty) return true;
+
+    final vehicleIds = <int>{};
+    for (final r in allRecords) {
+      final vId = r['vehicleId'] as int?;
+      if (vId != null) vehicleIds.add(vId);
+    }
+
+    for (final vId in vehicleIds) {
+      final isValid = await _verifyChainForVehicle(db, vId);
+      if (!isValid) return false;
+    }
+    return true;
+  }
+
+  Future<bool> _verifyChainForVehicle(dynamic db, int vehicleId) async {
+    final maps = await db.query(
+      'service_records',
+      where: 'vehicleId = ?',
+      whereArgs: [vehicleId],
+      orderBy: 'id ASC',
+    );
 
     if ((maps as List).isEmpty) return true;
 
-    String expectedPrevHash = '0000000000000000000000000000000000000000000000000000000000000000';
+    String expectedPrevHash = ServiceRecord.genesisHash;
     for (int i = 0; i < maps.length; i++) {
       final rec = ServiceRecord.fromMap(Map<String, dynamic>.from(maps[i]));
-      if (i > 0 && rec.prevHash != expectedPrevHash) {
-        return false;
+      if (i == 0) {
+        // Blok pertama (genesis) harus menggunakan hash genesis 64 nol atau legacy 32 nol
+        if (rec.prevHash != expectedPrevHash &&
+            rec.prevHash != ServiceRecord.legacyGenesisHash) {
+          return false;
+        }
+      } else {
+        // Blok berikutnya harus tersambung tepat ke hash blok sebelumnya
+        if (rec.prevHash != expectedPrevHash) {
+          return false;
+        }
       }
+
+      // Verifikasi integritas isi blok terhadap hash
       if (!rec.verifyHash()) {
         return false;
       }

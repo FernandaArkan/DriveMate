@@ -2,6 +2,7 @@
 class Vehicle {
   Vehicle({
     this.id,
+    this.serverId,
     required this.name,
     required this.brand,
     required this.year,
@@ -17,6 +18,7 @@ class Vehicle {
   });
 
   final int? id;
+  final int? serverId;
   String name;
   String brand;
   int year;
@@ -34,6 +36,7 @@ class Vehicle {
   Map<String, dynamic> toMap() {
     return {
       if (id != null) 'id': id,
+      'serverId': serverId,
       'name': name,
       'brand': brand,
       'year': year,
@@ -104,6 +107,7 @@ class Vehicle {
 
     return Vehicle(
       id: map['id'] == null ? null : toInt(map['id'], 0),
+      serverId: map['serverId'] == null ? null : toInt(map['serverId'], 0),
       name: map['name']?.toString() ?? '',
       brand: map['brand']?.toString() ?? '',
       year: toInt(map['year'], DateTime.now().year),

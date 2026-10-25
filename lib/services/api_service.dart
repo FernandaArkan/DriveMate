@@ -39,6 +39,7 @@ class ApiService {
     String endpoint, {
     required Map<String, dynamic> body,
     String? token,
+    Duration? timeout,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
@@ -48,9 +49,24 @@ class ApiService {
             headers: _headers(token: token),
             body: jsonEncode(body),
           )
-          .timeout(timeoutDuration);
+          .timeout(timeout ?? timeoutDuration);
 
-      final Map<String, dynamic> data = jsonDecode(response.body);
+      Map<String, dynamic> data = {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          data = decoded;
+        } else if (decoded is Map) {
+          data = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        // Tangani jika response bukan format JSON (seperti halaman error proxy)
+        return ApiResponse(
+          isSuccess: false,
+          statusCode: response.statusCode,
+          message: 'Respon server (${response.statusCode}): ${response.body.trim().isEmpty ? "Tidak ada konten respon." : response.body.trim()}',
+        );
+      }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return ApiResponse(
@@ -62,7 +78,7 @@ class ApiService {
         return ApiResponse(
           isSuccess: false,
           data: data,
-          message: data['message'] as String? ?? 'Terjadi kesalahan pada server.',
+          message: data['message'] as String? ?? 'Terjadi kesalahan pada server (${response.statusCode}).',
           statusCode: response.statusCode,
         );
       }
@@ -225,6 +241,7 @@ class ApiService {
     return [];
   }
 
+
   Future<Vehicle> addVehicle({
     required Vehicle vehicle,
     int userId = 1,
@@ -236,12 +253,32 @@ class ApiService {
       token: token,
     );
 
-    if (response.isSuccess && response.data != null && response.data!['data'] != null) {
-      return Vehicle.fromMap(Map<String, dynamic>.from(response.data!['data']));
+    if (!response.isSuccess || response.data == null) {
+      throw Exception(
+        response.message ?? 'Gagal menambahkan kendaraan ke server.',
+      );
     }
 
-    throw Exception(response.message ?? 'Gagal menambahkan kendaraan ke server.');
+    final responseData = response.data!;
+    final vehicleData = responseData['data'];
+
+    if (vehicleData is! Map) {
+      throw Exception(
+        'Respons server tidak berisi data kendaraan yang valid.',
+      );
+    }
+
+    final remoteVehicle = Vehicle.fromMap(
+      Map<String, dynamic>.from(vehicleData),
+    );
+
+    if (remoteVehicle.id == null) {
+      throw Exception('ID kendaraan dari server tidak ditemukan.');
+    }
+
+    return remoteVehicle;
   }
+
 
   Future<Vehicle?> updateVehicle({
     required Vehicle vehicle,
@@ -249,7 +286,7 @@ class ApiService {
     String? token,
   }) async {
     final map = vehicle.toApiMap(userId: userId);
-    map['id'] = vehicle.id;
+    map['id'] = vehicle.serverId;
 
     final response = await put(
       '/api/vehicles.php',

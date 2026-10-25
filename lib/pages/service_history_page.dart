@@ -55,6 +55,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
     final workshopCtrl = TextEditingController(text: 'AutoCare Bengkel');
     final mileageCtrl = TextEditingController(text: '${vehicle.mileage + 1000}');
     final costCtrl = TextEditingController(text: '500000');
+    final notesCtrl = TextEditingController();
     String serviceType = 'Servis';
 
     final added = await showDialog<bool>(
@@ -108,6 +109,14 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Biaya (Rp)'),
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Catatan Tambahan',
+                    hintText: 'Contoh: Oli Fully Synthetic 0W-20 & filter oli baru',
+                  ),
+                ),
               ],
             ),
           ),
@@ -125,7 +134,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                 final lastRecords = await _dbHelper.getServiceRecords(vehicleId: vehicle.id);
                 final prevHash = lastRecords.isNotEmpty
                     ? lastRecords.first.hash
-                    : '0000000000000000000000000000000000000000000000000000000000000000';
+                    : ServiceRecord.genesisHash;
 
                 final now = DateTime.now();
                 final dateStr = '${now.day} ${_monthName(now.month)} ${now.year}';
@@ -140,6 +149,8 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                   mileage: mileage,
                   workshop: workshopCtrl.text.trim(),
                   cost: cost,
+                  notes: notesCtrl.text.trim(),
+                  status: 'Selesai',
                   prevHash: prevHash,
                   timestamp: now.toIso8601String(),
                 );

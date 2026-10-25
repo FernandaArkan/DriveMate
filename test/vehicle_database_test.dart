@@ -84,6 +84,91 @@ void main() {
       expect(tamperedRec.verifyHash(), false); // Terdeteksi rusak
     });
 
+    test('Blockchain protects notes and status from tampering', () {
+      final rec = ServiceRecord(
+        vehicleId: 1,
+        title: 'Ganti Kampas Rem',
+        serviceType: 'Penggantian',
+        date: '10 Jan 2026',
+        mileage: 15000,
+        workshop: 'Bengkel Resmi',
+        cost: 250000,
+        notes: 'Original OEM part installed',
+        status: 'Selesai',
+        prevHash: ServiceRecord.genesisHash,
+        timestamp: '2026-01-10T09:00:00',
+      );
+
+      expect(rec.verifyHash(), true);
+
+      // Manipulasi notes
+      final tamperedNotes = ServiceRecord(
+        vehicleId: rec.vehicleId,
+        title: rec.title,
+        serviceType: rec.serviceType,
+        date: rec.date,
+        mileage: rec.mileage,
+        workshop: rec.workshop,
+        cost: rec.cost,
+        notes: 'Part palsu non-OEM', // Dimanipulasi
+        status: rec.status,
+        prevHash: rec.prevHash,
+        hash: rec.hash, // Hash asli
+        timestamp: rec.timestamp,
+      );
+      expect(tamperedNotes.verifyHash(), false);
+
+      // Manipulasi status
+      final tamperedStatus = ServiceRecord(
+        vehicleId: rec.vehicleId,
+        title: rec.title,
+        serviceType: rec.serviceType,
+        date: rec.date,
+        mileage: rec.mileage,
+        workshop: rec.workshop,
+        cost: rec.cost,
+        notes: rec.notes,
+        status: 'Dibatalkan', // Dimanipulasi
+        prevHash: rec.prevHash,
+        hash: rec.hash, // Hash asli
+        timestamp: rec.timestamp,
+      );
+      expect(tamperedStatus.verifyHash(), false);
+    });
+
+    test('Blockchain maintains backward compatibility with legacy hashes', () {
+      // Record lama yang dihitung menggunakan formula legacy (tanpa notes & status)
+      final legacyHash = ServiceRecord.calculateLegacyHash(
+        vehicleId: 1,
+        title: 'Servis Berkala Lama',
+        serviceType: 'Servis',
+        date: '01 Jan 2024',
+        mileage: 5000,
+        workshop: 'Bengkel Lama',
+        cost: 100000,
+        prevHash: ServiceRecord.genesisHash,
+        timestamp: '2024-01-01T10:00:00',
+      );
+
+      final legacyRecord = ServiceRecord(
+        vehicleId: 1,
+        title: 'Servis Berkala Lama',
+        serviceType: 'Servis',
+        date: '01 Jan 2024',
+        mileage: 5000,
+        workshop: 'Bengkel Lama',
+        cost: 100000,
+        notes: 'Catatan lama',
+        status: 'Selesai',
+        prevHash: ServiceRecord.genesisHash,
+        hash: legacyHash,
+        timestamp: '2024-01-01T10:00:00',
+      );
+
+      // Record lama tetap valid berkat backward compatibility fallback
+      expect(legacyRecord.verifyHash(), true);
+    });
+
     test('DatabaseHelper service records and blockchain verification works', () async {
       final dbHelper = DatabaseHelper.instance;
       final records = await dbHelper.getServiceRecords();

@@ -27,18 +27,20 @@ class AiService {
     if (cleanQuery.isEmpty) return 'Pertanyaan tidak boleh kosong.';
 
     try {
-      // 1. Hubungkan ke backend AI endpoint
+      // 1. Hubungkan ke backend AI endpoint dengan batas waktu 30 detik
       final apiResponse = await ApiService.instance.post(
         '/api/ai.php',
         body: {
           'message': cleanQuery,
           if (history != null)
             'history': history
+                .where((m) => !m.isError)
                 .take(6)
                 .map((m) => {'role': m.isUser ? 'user' : 'assistant', 'content': m.text})
                 .toList(),
         },
-      ).timeout(const Duration(seconds: 12));
+        timeout: const Duration(seconds: 30),
+      );
 
       // Jika backend merespons sukses
       if (apiResponse.isSuccess && apiResponse.data != null) {
@@ -49,8 +51,7 @@ class AiService {
         }
       }
 
-      // 2. Jika backend AI endpoint belum diimplementasikan di laptop teman (404/500/offline)
-      // Tangani secara transparan dan berikan analisis kontekstual kendaraan nyata
+      // 2. Jika backend AI endpoint error atau belum siap
       return await _handleUnconfiguredBackendAi(cleanQuery, apiResponse.message);
     } on TimeoutException {
       return 'Waktu koneksi ke server AI habis (Timeout). Mohon periksa koneksi internet Anda atau coba kembali beberapa saat lagi.';
