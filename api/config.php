@@ -44,7 +44,7 @@ return [
 
     // LLM AI Config
     'ai_provider' => getenv('AI_PROVIDER') ?: 'gemini',
-    'ai_model' => getenv('AI_MODEL') ?: 'gemini-3.8-flash',
+    'ai_model' => getenv('AI_MODEL') ?: 'gemini-1.5-flash',
     'gemini_api_key' => getenv('GEMINI_API_KEY') ?: (getenv('AI_API_KEY') ?: ''),
     'openai_api_key' => getenv('OPENAI_API_KEY') ?: '',
 ];

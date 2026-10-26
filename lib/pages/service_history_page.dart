@@ -16,6 +16,8 @@ class ServiceHistoryPage extends StatefulWidget {
 
 class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final VehicleRepository _repo = VehicleRepository.instance;
+  Vehicle? _selectedVehicle;
   List<ServiceRecord> _records = [];
   bool _isLoading = true;
   String _selectedFilter = 'Semua';
@@ -24,14 +26,61 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
   @override
   void initState() {
     super.initState();
-    _loadRecords();
+    _repo.addListener(_onRepoUpdated);
+    _selectedVehicle = widget.initialVehicle;
+    _initData();
+  }
+
+  @override
+  void dispose() {
+    _repo.removeListener(_onRepoUpdated);
+    super.dispose();
+  }
+
+  void _onRepoUpdated() {
+    if (mounted) {
+      _syncVehicle();
+      _loadRecords();
+    }
+  }
+
+  void _syncVehicle() {
+    if (_selectedVehicle != null) {
+      final matches = _repo.vehicles.where((v) => v.id == _selectedVehicle!.id);
+      if (matches.isNotEmpty) {
+        _selectedVehicle = matches.first;
+        return;
+      }
+    }
+    _selectedVehicle = widget.initialVehicle ??
+        _repo.primaryVehicle ??
+        (_repo.vehicles.isNotEmpty ? _repo.vehicles.first : null);
+  }
+
+  Future<void> _initData() async {
+    if (_repo.vehicles.isEmpty) {
+      await _repo.loadVehicles();
+    }
+    _syncVehicle();
+    await _loadRecords();
   }
 
   Future<void> _loadRecords() async {
     setState(() => _isLoading = true);
-    final vehicle = widget.initialVehicle ?? VehicleRepository.instance.primaryVehicle;
-    final records = await _dbHelper.getServiceRecords(vehicleId: vehicle?.id);
-    final isChainValid = await _dbHelper.verifyBlockchainIntegrity(vehicleId: vehicle?.id);
+    final vehicle = _selectedVehicle;
+    if (vehicle == null || vehicle.id == null) {
+      if (mounted) {
+        setState(() {
+          _records = [];
+          _isChainValid = true;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    final records = await _dbHelper.getServiceRecords(vehicleId: vehicle.id);
+    final isChainValid = await _dbHelper.verifyBlockchainIntegrity(vehicleId: vehicle.id);
 
     if (mounted) {
       setState(() {
@@ -48,8 +97,20 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
   }
 
   Future<void> _addNewRecord() async {
-    final vehicle = widget.initialVehicle ?? VehicleRepository.instance.primaryVehicle;
-    if (vehicle == null) return;
+    final vehicle = _selectedVehicle;
+    if (vehicle == null || vehicle.id == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Belum ada kendaraan yang dipilih. Silakan tambahkan kendaraan terlebih dahulu di menu Kendaraan.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
 
     final titleCtrl = TextEditingController();
     final workshopCtrl = TextEditingController(text: 'AutoCare Bengkel');
@@ -57,15 +118,31 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
     final costCtrl = TextEditingController(text: '500000');
     final notesCtrl = TextEditingController();
     String serviceType = 'Servis';
+    String? titleError;
 
     final added = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
+      builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
           backgroundColor: Colors.white,
-          title: const Text(
-            'Tambah Catatan Servis (Blockchain)',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Tambah Catatan Servis (Blockchain)',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Kendaraan: ${vehicle.brand} ${vehicle.name} (${vehicle.plate})',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+            ],
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -73,10 +150,16 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
               children: [
                 TextField(
                   controller: titleCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Nama Servis / Pekerjaan',
                     hintText: 'Contoh: Ganti Oli Mesin',
+                    errorText: titleError,
                   ),
+                  onChanged: (_) {
+                    if (titleError != null) {
+                      setDlgState(() => titleError = null);
+                    }
+                  },
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -122,15 +205,21 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => Navigator.pop(dialogCtx, false),
               child: const Text('Batal'),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
               onPressed: () async {
-                if (titleCtrl.text.trim().isEmpty) return;
+                final trimmedTitle = titleCtrl.text.trim();
+                if (trimmedTitle.isEmpty) {
+                  setDlgState(() {
+                    titleError = 'Nama servis wajib diisi.';
+                  });
+                  return;
+                }
 
-                // Ambil block terakhir untuk rantai hash
+                // Ambil block terakhir untuk rantai hash kendaraan ini
                 final lastRecords = await _dbHelper.getServiceRecords(vehicleId: vehicle.id);
                 final prevHash = lastRecords.isNotEmpty
                     ? lastRecords.first.hash
@@ -138,16 +227,19 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
 
                 final now = DateTime.now();
                 final dateStr = '${now.day} ${_monthName(now.month)} ${now.year}';
-                final mileage = int.tryParse(mileageCtrl.text.trim()) ?? vehicle.mileage;
+                final inputMileage = int.tryParse(mileageCtrl.text.trim());
+                final mileage = (inputMileage != null && inputMileage >= 0)
+                    ? inputMileage
+                    : vehicle.mileage;
                 final cost = int.tryParse(costCtrl.text.trim()) ?? 0;
 
                 final newRec = ServiceRecord(
-                  vehicleId: vehicle.id ?? 1,
-                  title: titleCtrl.text.trim(),
+                  vehicleId: vehicle.id!,
+                  title: trimmedTitle,
                   serviceType: serviceType,
                   date: dateStr,
                   mileage: mileage,
-                  workshop: workshopCtrl.text.trim(),
+                  workshop: workshopCtrl.text.trim().isEmpty ? 'Bengkel' : workshopCtrl.text.trim(),
                   cost: cost,
                   notes: notesCtrl.text.trim(),
                   status: 'Selesai',
@@ -155,16 +247,24 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                   timestamp: now.toIso8601String(),
                 );
 
-                await _dbHelper.addServiceRecord(newRec);
+                final insertedId = await _dbHelper.addServiceRecord(newRec);
+                if (insertedId <= 0) {
+                  setDlgState(() {
+                    titleError = 'Gagal menyimpan catatan servis ke database.';
+                  });
+                  return;
+                }
 
                 // Update juga mileage kendaraan jika bertambah
                 if (mileage > vehicle.mileage) {
                   vehicle.mileage = mileage;
                   vehicle.lastServiceDate = dateStr;
-                  await VehicleRepository.instance.updateVehicle(vehicle);
+                  await _repo.updateVehicle(vehicle);
                 }
 
-                if (context.mounted) Navigator.pop(ctx, true);
+                if (dialogCtx.mounted) {
+                  Navigator.pop(dialogCtx, true);
+                }
               },
               child: const Text('Simpan & Hash Blok'),
             ),
@@ -174,7 +274,17 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
     );
 
     if (added == true) {
-      _loadRecords();
+      await _loadRecords();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Catatan servis berhasil ditambahkan ke database & blockchain.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      }
     }
   }
 
@@ -185,7 +295,8 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final vehicle = widget.initialVehicle ?? VehicleRepository.instance.primaryVehicle;
+    final vehicle = _selectedVehicle;
+    final allVehicles = _repo.vehicles;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -235,48 +346,84 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${vehicle?.brand ?? 'Honda'} ${vehicle?.name ?? 'Civic'} ${vehicle?.year ?? 2022}',
+                          vehicle != null
+                              ? '${vehicle.brand} ${vehicle.name} ${vehicle.year}'
+                              : 'Belum Ada Kendaraan',
                           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppTheme.textPrimary),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          vehicle?.plate ?? 'B 1234 KZ',
+                          vehicle?.plate ?? 'Tambahkan kendaraan di menu Kendaraan',
                           style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                         ),
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _isChainValid
-                          ? AppTheme.success.withValues(alpha: 0.1)
-                          : AppTheme.danger.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _isChainValid ? Icons.verified_rounded : Icons.warning_rounded,
-                          size: 14,
-                          color: _isChainValid ? AppTheme.success : AppTheme.danger,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _isChainValid ? 'Blockchain Valid' : 'Integritas Rusak',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
+                  if (vehicle != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _isChainValid
+                            ? AppTheme.success.withValues(alpha: 0.1)
+                            : AppTheme.danger.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isChainValid ? Icons.verified_rounded : Icons.warning_rounded,
+                            size: 14,
                             color: _isChainValid ? AppTheme.success : AppTheme.danger,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            _isChainValid ? 'Blockchain Valid' : 'Integritas Rusak',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: _isChainValid ? AppTheme.success : AppTheme.danger,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
+
+            if (allVehicles.length > 1) ...[
+              const SizedBox(height: 12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: allVehicles.map((v) {
+                    final isSelected = v.id == vehicle?.id;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text('${v.brand} ${v.name} (${v.plate})'),
+                        selected: isSelected,
+                        onSelected: (val) {
+                          if (val && v.id != null) {
+                            setState(() => _selectedVehicle = v);
+                            _loadRecords();
+                          }
+                        },
+                        selectedColor: AppTheme.navy,
+                        labelStyle: TextStyle(
+                          color: isSelected ? Colors.white : AppTheme.textPrimary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        backgroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
 
             const SizedBox(height: 18),
 
@@ -315,17 +462,45 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
 
             if (_isLoading)
               const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
-            else if (_filteredRecords.isEmpty)
+            else if (vehicle == null)
               Container(
                 padding: const EdgeInsets.all(32),
                 alignment: Alignment.center,
                 child: const Column(
                   children: [
-                    Icon(Icons.receipt_long_outlined, size: 48, color: AppTheme.textSecondary),
+                    Icon(Icons.directions_car_outlined, size: 48, color: AppTheme.textSecondary),
                     SizedBox(height: 12),
                     Text(
-                      'Belum ada riwayat servis',
-                      style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                      'Belum ada kendaraan',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppTheme.textPrimary),
+                    ),
+                    SizedBox(height: 6),
+                    Text(
+                      'Tambahkan kendaraan di menu Kendaraan terlebih dahulu untuk mulai mencatat riwayat servis.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                  ],
+                ),
+              )
+            else if (_filteredRecords.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(32),
+                alignment: Alignment.center,
+                child: Column(
+                  children: [
+                    const Icon(Icons.receipt_long_outlined, size: 48, color: AppTheme.textSecondary),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Belum ada riwayat servis untuk ${vehicle.brand} ${vehicle.name}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Tekan tombol (+) di pojok kanan atas untuk menambah catatan servis baru.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
                 ),

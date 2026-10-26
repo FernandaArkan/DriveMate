@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:drivemate/models/vehicle.dart';
 import 'package:drivemate/models/service_record.dart';
 import 'package:drivemate/database/database_helper.dart';
+import 'package:drivemate/repositories/vehicle_repository.dart';
 
 void main() {
   setUpAll(() {
@@ -176,6 +178,71 @@ void main() {
 
       final integrity = await dbHelper.verifyBlockchainIntegrity();
       expect(integrity, true);
+    });
+
+    test('Vehicles list is empty initially when user has not added any vehicles', () async {
+      SharedPreferences.setMockInitialValues({'user_vehicles_1': <String>[]});
+      final vehicles = await DatabaseHelper.instance.getVehicles();
+      expect(vehicles.isEmpty, true);
+    });
+
+    test('Adding vehicle stores in database, sets first as primary, and loads successfully', () async {
+      SharedPreferences.setMockInitialValues({'user_vehicles_1': <String>[]});
+      final repo = VehicleRepository.instance;
+      await repo.loadVehicles();
+      expect(repo.vehicles.isEmpty, true);
+
+      final newVehicle = Vehicle(
+        name: 'Innova Reborn',
+        brand: 'Toyota',
+        year: 2023,
+        plate: 'D 1234 ABC',
+        mileage: 15000,
+        fuelLevel: 75,
+      );
+
+      final success = await repo.addVehicle(newVehicle);
+      expect(success, true);
+      expect(repo.vehicles.isNotEmpty, true);
+
+      final added = repo.vehicles.firstWhere((v) => v.name == 'Innova Reborn');
+      expect(added.brand, 'Toyota');
+      expect(added.plate, 'D 1234 ABC');
+      expect(added.isPrimary, true);
+      expect(repo.primaryVehicle?.id, added.id);
+    });
+
+    test('Adding service record chains hash and passes verifyBlockchainIntegrity for vehicle', () async {
+      final dbHelper = DatabaseHelper.instance;
+      final repo = VehicleRepository.instance;
+      expect(repo.vehicles.isNotEmpty, true);
+      final vehicle = repo.vehicles.first;
+
+      final existingRecords = await dbHelper.getServiceRecords(vehicleId: vehicle.id);
+      final prevHash = existingRecords.isNotEmpty ? existingRecords.first.hash : ServiceRecord.genesisHash;
+
+      final rec1 = ServiceRecord(
+        vehicleId: vehicle.id!,
+        title: 'Servis Pertama',
+        serviceType: 'Servis',
+        date: '26 Okt 2026',
+        mileage: vehicle.mileage + 1000,
+        workshop: 'AutoCare Bengkel',
+        cost: 450000,
+        notes: 'Ganti oli mesin & filter',
+        status: 'Selesai',
+        prevHash: prevHash,
+        timestamp: DateTime.now().toIso8601String(),
+      );
+
+      final insertedId = await dbHelper.addServiceRecord(rec1);
+      expect(insertedId > 0, true);
+
+      final recordsAfter = await dbHelper.getServiceRecords(vehicleId: vehicle.id);
+      expect(recordsAfter.any((r) => r.id == insertedId), true);
+
+      final isChainValid = await dbHelper.verifyBlockchainIntegrity(vehicleId: vehicle.id);
+      expect(isChainValid, true);
     });
   });
 }

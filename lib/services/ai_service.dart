@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../database/database_helper.dart';
 import 'api_service.dart';
 
 class AiChatMessage {
@@ -17,87 +16,123 @@ class AiChatMessage {
   final bool isError;
 }
 
+class AiServiceException implements Exception {
+  final String message;
+  const AiServiceException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class AiService {
   AiService._internal();
   static final AiService instance = AiService._internal();
 
-  /// Mengirim pertanyaan ke backend AI endpoint jika tersedia.
+  /// Menandai apakah sedang ada permintaan AI yang aktif berjalan
+  bool _isRequestInFlight = false;
+
+  /// Mengirim pertanyaan ke backend AI DriveMate yang terhubung ke Google Gemini API.
   Future<String> askAi(String query, {List<AiChatMessage>? history}) async {
     final cleanQuery = query.trim();
-    if (cleanQuery.isEmpty) return 'Pertanyaan tidak boleh kosong.';
+    if (cleanQuery.isEmpty) {
+      throw const AiServiceException('Pertanyaan tidak boleh kosong.');
+    }
+
+    if (_isRequestInFlight) {
+      throw const AiServiceException('Permintaan AI sebelumnya masih berlangsung. Mohon tunggu respon selesai.');
+    }
+
+    _isRequestInFlight = true;
 
     try {
-      // 1. Hubungkan ke backend AI endpoint dengan batas waktu 30 detik
+      // Siapkan riwayat percakapan:
+      // Abaikan pesan error dan lewati pesan bot pembuka agar giliran pertama riwayat diawali oleh user
+      List<Map<String, String>> historyPayload = [];
+      if (history != null && history.isNotEmpty) {
+        final validMessages = history.where((m) => !m.isError).toList();
+        // Cegah duplikasi jika pesan terakhir di history adalah pertanyaan saat ini
+        if (validMessages.isNotEmpty && validMessages.last.isUser && validMessages.last.text.trim() == cleanQuery) {
+          validMessages.removeLast();
+        }
+        final contextMessages = validMessages.skipWhile((m) => !m.isUser).toList();
+        historyPayload = contextMessages
+            .take(6)
+            .map((m) => {
+                  'role': m.isUser ? 'user' : 'assistant',
+                  'content': m.text,
+                })
+            .toList();
+      }
+
+      // Hubungkan ke backend AI endpoint (/api/ai.php) dengan batas waktu 35 detik
+      // (Memberikan toleransi cukup untuk retry bertahap 503 di backend)
       final apiResponse = await ApiService.instance.post(
         '/api/ai.php',
         body: {
           'message': cleanQuery,
-          if (history != null)
-            'history': history
-                .where((m) => !m.isError)
-                .take(6)
-                .map((m) => {'role': m.isUser ? 'user' : 'assistant', 'content': m.text})
-                .toList(),
+          if (historyPayload.isNotEmpty) 'history': historyPayload,
         },
-        timeout: const Duration(seconds: 30),
+        timeout: const Duration(seconds: 35),
       );
 
-      // Jika backend merespons sukses
+      // Tangani jika response backend sukses (HTTP 2xx)
       if (apiResponse.isSuccess && apiResponse.data != null) {
         final data = apiResponse.data!;
         final reply = data['reply'] ?? data['message'] ?? data['answer'] ?? data['data'];
         if (reply != null && reply.toString().trim().isNotEmpty) {
           return reply.toString().trim();
         }
+        throw const AiServiceException('Model Gemini AI tidak menghasilkan respon teks.');
       }
 
-      // 2. Jika backend AI endpoint error atau belum siap
-      return await _handleUnconfiguredBackendAi(cleanQuery, apiResponse.message);
+      // Jika backend merespons error (misal API key belum dikonfigurasi, kuota habis, error upstream Gemini 503)
+      final rawErrorMsg = apiResponse.message;
+      final cleanErrorMsg = _sanitizeErrorMessage(rawErrorMsg, apiResponse.statusCode);
+      throw AiServiceException(cleanErrorMsg);
     } on TimeoutException {
-      return 'Waktu koneksi ke server AI habis (Timeout). Mohon periksa koneksi internet Anda atau coba kembali beberapa saat lagi.';
+      throw const AiServiceException(
+        'Waktu koneksi ke server AI habis (Timeout). Mohon periksa koneksi internet Anda atau coba kembali beberapa saat lagi.',
+      );
+    } on AiServiceException {
+      rethrow;
     } catch (e) {
       debugPrint('AiService Error: $e');
-      return await _handleUnconfiguredBackendAi(cleanQuery, e.toString());
+      final errStr = _sanitizeErrorMessage(e.toString(), null);
+      throw AiServiceException('Gagal terhubung ke server AI: $errStr');
+    } finally {
+      _isRequestInFlight = false;
     }
   }
 
-  /// Menangani kondisi backend AI belum siap dengan transparan dan analitis
-  Future<String> _handleUnconfiguredBackendAi(String query, String? backendError) async {
-    final q = query.toLowerCase();
-
-    // Dapatkan data kendaraan nyata dari database lokal pengguna
-    String vehicleContext = '';
-    try {
-      final vehicles = await DatabaseHelper.instance.getVehicles();
-      if (vehicles.isNotEmpty) {
-        final primary = vehicles.first;
-        vehicleContext = '\n\nInformasi Terkait Kendaraan Anda:\n'
-            '• Unit: ${primary.brand} ${primary.name} (${primary.year})\n'
-            '• Jarak Tempuh Saat Ini: ${primary.mileage} km\n'
-            '• Bahan Bakar: ${primary.fuelLevel}%\n'
-            '• Pajak Jatuh Tempo: ${primary.taxDueDate ?? "Belum diatur"}';
-      }
-    } catch (_) {}
-
-    if (q.contains('oli') || q.contains('pelumas')) {
-      return '[Mode Asisten Otomotif]'
-          '\nPenggantian oli mesin dianjurkan setiap 5.000 - 10.000 km atau maksimal 6 bulan sekali. '
-          'Gunakan viskositas sesuai buku manual kendaraan.$vehicleContext'
-          '\n\nCatatan: Integrasi Cloud AI Server (/api/ai.php) saat ini belum aktif ($backendError).';
-    } else if (q.contains('rem') || q.contains('bunyi')) {
-      return '[Mode Asisten Otomotif]'
-          '\nBunyi decit pada rem umumnya terjadi karena kampas rem menipis atau kotoran pada rotor cakram. '
-          'Periksa ketebalan kampas di bengkel terdekat.$vehicleContext'
-          '\n\nCatatan: Integrasi Cloud AI Server (/api/ai.php) saat ini belum aktif ($backendError).';
-    } else if (q.contains('aki') || q.contains('baterai')) {
-      return '[Mode Asisten Otomotif]'
-          '\nUmur pakai aki kendaraan berkisar 1,5 - 2,5 tahun. Tanda aki mulai lemah antara lain putaran starter melambat dan tegangan di bawah 12.4V.$vehicleContext'
-          '\n\nCatatan: Integrasi Cloud AI Server (/api/ai.php) saat ini belum aktif ($backendError).';
+  /// Membersihkan respon error server agar tidak pernah menampilkan kode HTML mentah di ruang obrolan
+  static String _sanitizeErrorMessage(String? raw, int? statusCode) {
+    if (raw == null || raw.trim().isEmpty) {
+      return 'Terjadi kesalahan saat menghubungi server AI (${statusCode ?? "tanpa kode status"}).';
     }
 
-    return 'Layanan Backend AI (/api/ai.php) belum aktif pada server backend (${ApiService.instance.baseUrl}).'
-        '\n\nStatus Teknis:'
-        '\n• Endpoint `/api/ai.php` memerlukan implementasi backend PHP yang terhubung ke API Key LLM (seperti Google Gemini API atau model AI lokal) agar kredensial API tidak terekspos langsung di aplikasi mobile.'
-        '$vehicleContext';
+    final trimmed = raw.trim();
+    final containsHtml = trimmed.contains('<html') ||
+        trimmed.contains('<!DOCTYPE') ||
+        trimmed.contains('<head') ||
+        trimmed.contains('<body') ||
+        trimmed.contains('<div');
+
+    if (statusCode == 503 || trimmed.contains('503')) {
+      return 'Layanan Google Gemini AI sedang mengalami lonjakan beban/permintaan tinggi (HTTP 503). Silakan coba ajukan kembali pertanyaan Anda dalam beberapa saat.';
+    }
+
+    if (statusCode == 504 || trimmed.contains('504')) {
+      return 'Server mengalami batas waktu respon (HTTP 504 Gateway Timeout). Silakan coba beberapa saat lagi.';
+    }
+
+    if (statusCode == 502 || trimmed.contains('502')) {
+      return 'Gagal terhubung ke upstream AI (HTTP 502 Bad Gateway). Silakan coba beberapa saat lagi.';
+    }
+
+    if (containsHtml) {
+      return 'Server mengembalikan halaman respon error (${statusCode ?? "HTTP Error"}). Silakan coba beberapa saat lagi.';
+    }
+
+    return trimmed;
   }
 }

@@ -68,11 +68,18 @@ class _VehiclesPageState extends State<VehiclesPage> {
     bool success;
     if (vehicle == null) {
       success = await _repo.addVehicle(result);
+      if (success && _repo.vehicles.isNotEmpty) {
+        _selectedVehicleId = _repo.primaryVehicle?.id ?? _repo.vehicles.last.id;
+      }
     } else {
       success = await _repo.updateVehicle(result);
+      if (success) {
+        _selectedVehicleId = result.id;
+      }
     }
 
     if (!mounted) return;
+    setState(() {});
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -547,7 +554,9 @@ class _VehiclesPageState extends State<VehiclesPage> {
                           MaterialPageRoute(
                             builder: (_) => ServiceHistoryPage(initialVehicle: active),
                           ),
-                        );
+                        ).then((_) {
+                          _repo.loadVehicles();
+                        });
                       },
                     ),
                     const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),

@@ -13,6 +13,8 @@ class _AiPageState extends State<AiPage> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isTyping = false;
+  bool _isProcessing = false;
+  int _activeRequestId = 0;
 
   final List<AiChatMessage> _messages = [
     AiChatMessage(
@@ -30,8 +32,14 @@ class _AiPageState extends State<AiPage> {
   }
 
   Future<void> _sendMessage() async {
+    // Kunci eksekusi agar 1 pesan hanya menjalankan 1 request aktif dan tidak terjadi panggilan ganda
+    if (_isProcessing || _isTyping) return;
+
     final query = _inputController.text.trim();
-    if (query.isEmpty || _isTyping) return;
+    if (query.isEmpty) return;
+
+    _isProcessing = true;
+    final currentRequestId = ++_activeRequestId;
 
     final now = TimeOfDay.now();
     final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -47,17 +55,21 @@ class _AiPageState extends State<AiPage> {
     try {
       final reply = await AiService.instance.askAi(query, history: _messages);
 
-      if (!mounted) return;
+      // Pastikan widget masih aktif dan hanya memproses respon dari request terkini
+      if (!mounted || currentRequestId != _activeRequestId) return;
 
       setState(() {
         _isTyping = false;
+        _isProcessing = false;
         _messages.add(AiChatMessage(text: reply, isUser: false, time: timeStr));
       });
       _scrollToBottom();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || currentRequestId != _activeRequestId) return;
+
       setState(() {
         _isTyping = false;
+        _isProcessing = false;
         _messages.add(
           AiChatMessage(
             text: 'Gagal memproses respon AI: $e',
@@ -68,6 +80,13 @@ class _AiPageState extends State<AiPage> {
         );
       });
       _scrollToBottom();
+    } finally {
+      if (currentRequestId == _activeRequestId) {
+        _isProcessing = false;
+        if (mounted && _isTyping) {
+          setState(() => _isTyping = false);
+        }
+      }
     }
   }
 
@@ -219,7 +238,11 @@ class _AiPageState extends State<AiPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: TextField(
                         controller: _inputController,
-                        onSubmitted: (_) => _sendMessage(),
+                        onSubmitted: (_) {
+                          if (!_isProcessing && !_isTyping) {
+                            _sendMessage();
+                          }
+                        },
                         decoration: const InputDecoration(
                           hintText: 'Tanyakan kendala atau perawatan kendaraan...',
                           hintStyle: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
@@ -230,7 +253,7 @@ class _AiPageState extends State<AiPage> {
                   ),
                   const SizedBox(width: 10),
                   IconButton.filled(
-                    onPressed: _isTyping ? null : _sendMessage,
+                    onPressed: (_isProcessing || _isTyping) ? null : _sendMessage,
                     icon: const Icon(Icons.send_rounded, size: 20),
                     style: IconButton.styleFrom(
                       backgroundColor: AppTheme.primary,

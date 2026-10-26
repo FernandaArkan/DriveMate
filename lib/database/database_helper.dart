@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
@@ -297,7 +297,7 @@ class DatabaseHelper {
     final db = await database;
     final prefs = await SharedPreferences.getInstance();
     final activeId = prefs.getInt('active_user_id');
-    final currentUserId = userId ?? activeId;
+    final currentUserId = userId ?? activeId ?? 1;
 
     // Bersihkan data dummy Yamaha NMAX warisan jika masih tersisa di database
     try {
@@ -307,10 +307,6 @@ class DatabaseHelper {
         whereArgs: ['%nmax%', '%nmax%'],
       );
     } catch (_) {}
-
-    if (currentUserId == null) {
-      return [];
-    }
 
     final userVehiclesKey = 'user_vehicles_$currentUserId';
     List<String>? userVehicleIds = prefs.getStringList(userVehiclesKey);
@@ -389,6 +385,11 @@ class DatabaseHelper {
     final userVehiclesKey = 'user_vehicles_$currentUserId';
     final userVehicleIds = prefs.getStringList(userVehiclesKey) ?? [];
 
+    final isFirst = userVehicleIds.isEmpty;
+    if (isFirst) {
+      vehicle.isPrimary = true;
+    }
+
     // Jika kendaraan baru menjadi kendaraan utama,
     // hapus status utama dari kendaraan milik pengguna ini.
     if (vehicle.isPrimary && userVehicleIds.isNotEmpty) {
@@ -403,6 +404,9 @@ class DatabaseHelper {
     // Simpan kendaraan ke database lokal terlebih dahulu.
     final localMap = vehicle.toMap();
     localMap['isSynced'] = 0;
+    if (isFirst) {
+      localMap['isPrimary'] = 1;
+    }
 
     // ID ini adalah ID lokal SQLite, bukan ID server.
     final localId = await db.insert('vehicles', localMap);
@@ -448,6 +452,18 @@ Future<int> updateVehicle(Vehicle vehicle, {int? userId}) async {
 
   if (vehicle.id == null) {
     throw ArgumentError('ID lokal kendaraan tidak boleh kosong.');
+  }
+
+  final userVehiclesKey = 'user_vehicles_$currentUserId';
+  final userVehicleIds = prefs.getStringList(userVehiclesKey) ?? [];
+
+  if (vehicle.isPrimary && userVehicleIds.isNotEmpty) {
+    await db.update(
+      'vehicles',
+      {'isPrimary': 0},
+      where: 'id IN (${userVehicleIds.map((_) => '?').join(',')}) AND id != ?',
+      whereArgs: [...userVehicleIds.map(int.parse), vehicle.id],
+    );
   }
 
   // Simpan perubahan menggunakan ID lokal SQLite.

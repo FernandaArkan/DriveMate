@@ -70,11 +70,53 @@ class _NotificationsPageState extends State<NotificationsPage>
     }
   }
 
+  /// Menentukan kategori pengingat secara tepat berdasarkan jenis pengingat.
+  /// Memastikan pengingat yang dibuat (misalnya untuk perawatan ban, aki, rem)
+  /// muncul pada kategori 'Perawatan' dan tidak salah masuk atau hilang.
+  String _resolveCategory(ReminderItem item) {
+    final cat = item.category.trim();
+    final catLower = cat.toLowerCase();
+    if (catLower == 'perawatan') return 'Perawatan';
+    if (catLower == 'pajak') return 'Pajak';
+    if (catLower == 'sistem') return 'Sistem';
+
+    final titleLower = item.title.toLowerCase();
+    if (titleLower.contains('aki') ||
+        titleLower.contains('ban') ||
+        titleLower.contains('rem') ||
+        titleLower.contains('perawatan')) {
+      return 'Perawatan';
+    }
+    if (titleLower.contains('pajak') || titleLower.contains('stnk')) {
+      return 'Pajak';
+    }
+
+    return cat.isNotEmpty ? cat : 'Servis';
+  }
+
+  /// Menentukan kategori awal dari judul pengingat
+  String _resolveCategoryFromTitle(String title, {String fallback = 'Servis'}) {
+    final titleLower = title.toLowerCase();
+    if (titleLower.contains('aki') ||
+        titleLower.contains('ban') ||
+        titleLower.contains('rem') ||
+        titleLower.contains('perawatan')) {
+      return 'Perawatan';
+    }
+    if (titleLower.contains('pajak') || titleLower.contains('stnk')) {
+      return 'Pajak';
+    }
+    if (titleLower.contains('servis') || titleLower.contains('oli')) {
+      return 'Servis';
+    }
+    return fallback;
+  }
+
   List<ReminderItem> get _filteredList {
     if (_selectedFilter == 'Semua') return _reminders;
     return _reminders
         .where((r) =>
-            r.category.toLowerCase().contains(_selectedFilter.toLowerCase()))
+            _resolveCategory(r).toLowerCase() == _selectedFilter.toLowerCase())
         .toList();
   }
 
@@ -256,7 +298,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     final messageController =
         TextEditingController(text: existingItem?.message ?? '');
 
-    String category = existingItem?.category ?? 'Servis';
+    String category = existingItem != null ? _resolveCategory(existingItem) : 'Servis';
     int? selectedVehicleId = existingItem?.vehicleId ??
         _vehicleRepo.primaryVehicle?.id ??
         (_vehicleRepo.vehicles.isNotEmpty
@@ -337,7 +379,8 @@ class _NotificationsPageState extends State<NotificationsPage>
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         isDense: true,
-                        initialValue: category,
+                        key: ValueKey(category),
+                        initialValue: const ['Servis', 'Pajak', 'Perawatan', 'Sistem'].contains(category) ? category : 'Servis',
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: const Color(0xFFF4F7FB),
@@ -374,14 +417,14 @@ class _NotificationsPageState extends State<NotificationsPage>
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
-                        children: [
-                          'Ganti Oli Mesin',
-                          'Servis 10.000 km',
-                          'Pajak STNK',
-                          'Cek Aki & Ban',
+                        children: const [
+                          {'title': 'Ganti Oli Mesin', 'category': 'Servis'},
+                          {'title': 'Servis 10.000 km', 'category': 'Servis'},
+                          {'title': 'Pajak STNK', 'category': 'Pajak'},
+                          {'title': 'Cek Aki & Ban', 'category': 'Perawatan'},
                         ].map((template) {
                           return ActionChip(
-                            label: Text(template,
+                            label: Text(template['title']!,
                                 style: const TextStyle(fontSize: 11)),
                             backgroundColor: const Color(0xFFEBF2FA),
                             side: BorderSide.none,
@@ -390,7 +433,8 @@ class _NotificationsPageState extends State<NotificationsPage>
                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                             onPressed: () {
                               setDialogState(() {
-                                titleController.text = template;
+                                titleController.text = template['title']!;
+                                category = template['category']!;
                               });
                             },
                           );
@@ -691,9 +735,12 @@ class _NotificationsPageState extends State<NotificationsPage>
           '${DateFormat('yyyy-MM-dd').format(scheduledDateTime)} ${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
 
       final title = titleController.text.trim();
+      final effectiveCategory = (category == 'Servis')
+          ? _resolveCategoryFromTitle(title, fallback: category)
+          : category;
       final message = messageController.text.trim().isNotEmpty
           ? messageController.text.trim()
-          : 'Jadwal $category kendaraan Anda telah tiba. Silakan lakukan perawatan berkala.';
+          : 'Jadwal $effectiveCategory kendaraan Anda telah tiba. Silakan lakukan perawatan berkala.';
 
       int reminderId;
 
@@ -704,7 +751,7 @@ class _NotificationsPageState extends State<NotificationsPage>
           vehicleId: selectedVehicleId,
           title: title,
           message: message,
-          category: category,
+          category: effectiveCategory,
           timeAgo: 'Diperbarui',
           targetDate: formattedTarget,
           isRead: false,
@@ -716,7 +763,7 @@ class _NotificationsPageState extends State<NotificationsPage>
           vehicleId: selectedVehicleId,
           title: title,
           message: message,
-          category: category,
+          category: effectiveCategory,
           timeAgo: 'Dijadwalkan',
           targetDate: formattedTarget,
           isRead: false,
@@ -1095,7 +1142,9 @@ class _NotificationsPageState extends State<NotificationsPage>
     Color iconBg;
     IconData iconData;
 
-    switch (item.category.toLowerCase()) {
+    final effectiveCategory = _resolveCategory(item);
+
+    switch (effectiveCategory.toLowerCase()) {
       case 'servis':
         iconColor = AppTheme.danger;
         iconBg = AppTheme.danger.withValues(alpha: 0.12);
@@ -1175,7 +1224,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            item.category,
+                            effectiveCategory,
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
