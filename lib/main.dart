@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:intl/intl.dart';
 
 import 'database/platform_init.dart';
+import 'localization/app_localizations.dart';
 import 'pages/ai_page.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
@@ -13,6 +13,7 @@ import 'pages/profile_page.dart';
 import 'pages/splash_page.dart';
 import 'pages/trips_page.dart';
 import 'pages/vehicles_page.dart';
+import 'services/language_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
@@ -22,7 +23,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('id_ID', null);
   await initializeDateFormatting('en_US', null);
-  Intl.defaultLocale = 'id_ID';
+  await LanguageService.instance.init();
   initPlatformDatabase();
   await NotificationService.instance.init();
   NotificationService.instance.onNotificationClick = (payload) {
@@ -39,48 +40,51 @@ class DriveMateApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: rootNavigatorKey,
-      title: 'DriveMate',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('id', 'ID'),
-        Locale('en', 'US'),
-      ],
-      locale: const Locale('id', 'ID'),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const SplashPage(),
-        '/login': (context) => const LoginPage(),
-        '/home': (context) => const MainNavigation(),
-      },
-      builder: (context, child) {
-        return ColoredBox(
-          color: const Color(0xFFE5EAF2),
-          child: Center(
-            child: Container(
-              width: double.infinity,
-              height: double.infinity,
-              constraints: const BoxConstraints(maxWidth: 430),
-              decoration: BoxDecoration(
-                color: AppTheme.background,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 30,
-                    offset: const Offset(0, 4),
+    return ListenableBuilder(
+      listenable: LanguageService.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          navigatorKey: rootNavigatorKey,
+          title: 'DriveMate',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: LanguageService.instance.currentLocale,
+          initialRoute: '/',
+          routes: {
+            '/': (context) => const SplashPage(),
+            '/login': (context) => const LoginPage(),
+            '/home': (context) => const MainNavigation(),
+          },
+          builder: (context, child) {
+            return ColoredBox(
+              color: const Color(0xFFE5EAF2),
+              child: Center(
+                child: Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  constraints: const BoxConstraints(maxWidth: 430),
+                  decoration: BoxDecoration(
+                    color: AppTheme.background,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 30,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
-              child: child ?? const SizedBox.shrink(),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -96,14 +100,6 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int selectedIndex = 0;
-
-  static const List<String> labels = [
-    'Home',
-    'Kendaraan',
-    'Perjalanan',
-    'AI',
-    'Profil',
-  ];
 
   static const List<IconData> icons = [
     Icons.home_outlined,
@@ -121,6 +117,15 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final labels = [
+      l10n.navHome,
+      l10n.navVehicles,
+      l10n.navTrips,
+      l10n.navAi,
+      l10n.navProfile,
+    ];
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: IndexedStack(

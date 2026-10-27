@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import '../localization/app_localizations.dart';
 import '../models/user_profile.dart';
 import '../repositories/user_repository.dart';
 import '../services/biometric_service.dart';
 import '../theme/app_theme.dart';
 import 'activity_history_page.dart';
+import 'feedback_page.dart';
 import 'game_page.dart';
 import 'settings_page.dart';
 
@@ -36,6 +38,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _editProfileDialog(UserProfile user) async {
+    final l10n = AppLocalizations.of(context);
     final nameCtrl = TextEditingController(text: user.name);
     final emailCtrl = TextEditingController(text: user.email);
     final phoneCtrl = TextEditingController(text: user.phone);
@@ -44,30 +47,30 @@ class _ProfilePageState extends State<ProfilePage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        title: const Text('Edit Profil', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(l10n.editProfile, style: const TextStyle(fontWeight: FontWeight.w800)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'Nama Lengkap'),
+              decoration: InputDecoration(labelText: l10n.fullName),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: emailCtrl,
-              decoration: const InputDecoration(labelText: 'Email'),
+              decoration: InputDecoration(labelText: l10n.registeredEmail),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: phoneCtrl,
-              decoration: const InputDecoration(labelText: 'Nomor HP'),
+              decoration: InputDecoration(labelText: l10n.whatsappNumber),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
@@ -76,7 +79,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 Navigator.pop(ctx, true);
               }
             },
-            child: const Text('Simpan'),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -91,8 +94,8 @@ class _ProfilePageState extends State<ProfilePage> {
       await _userRepo.updateProfile(updated);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profil berhasil diperbarui.'),
+          SnackBar(
+            content: Text(l10n.profileUpdatedSuccess),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -101,6 +104,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _showDataSheet(UserProfile user) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -113,23 +117,23 @@ class _ProfilePageState extends State<ProfilePage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Data Pengguna',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+            Text(
+              l10n.menuUserData,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
             ),
             const SizedBox(height: 16),
-            _infoRow('Nama Lengkap', user.name),
-            _infoRow('Email Terdaftar', user.email),
-            _infoRow('Nomor WhatsApp', user.phone),
-            _infoRow('Status Akun', 'Terverifikasi (Aktif)'),
-            _infoRow('ID Pengguna', 'USR-DM-${user.id.toString().padLeft(4, "0")}'),
+            _infoRow(l10n.fullName, user.name),
+            _infoRow(l10n.registeredEmail, user.email),
+            _infoRow(l10n.whatsappNumber, user.phone),
+            _infoRow(l10n.accountStatus, l10n.verifiedActive),
+            _infoRow(l10n.userIdLabel, 'USR-DM-${user.id.toString().padLeft(4, "0")}'),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('Tutup'),
+                child: Text(l10n.close),
               ),
             ),
           ],
@@ -139,6 +143,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _showSecurityModal(UserProfile user) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -152,15 +157,15 @@ class _ProfilePageState extends State<ProfilePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Keamanan & Biometrik',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+              Text(
+                l10n.menuSecurity,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
               ),
               const SizedBox(height: 16),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Login dengan Sidik Jari / Wajah', style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text('Buka aplikasi lebih cepat dan aman', style: TextStyle(fontSize: 12)),
+                title: Text(l10n.biometricLogin, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(l10n.biometricSubtitle, style: const TextStyle(fontSize: 12)),
                 value: user.isBiometricEnabled,
                 activeThumbColor: AppTheme.primary,
                 onChanged: (val) async {
@@ -173,11 +178,11 @@ class _ProfilePageState extends State<ProfilePage> {
                 },
               ),
               const Divider(color: Color(0xFFF0F4FA)),
-              const ListTile(
+              ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.lock_reset_rounded, color: AppTheme.primary),
-                title: Text('Ubah Password', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                subtitle: Text('Perbarui kata sandi akun Anda secara berkala', style: TextStyle(fontSize: 11)),
+                leading: const Icon(Icons.lock_reset_rounded, color: AppTheme.primary),
+                title: Text(l10n.changePassword, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                subtitle: Text(l10n.changePasswordSubtitle, style: const TextStyle(fontSize: 11)),
               ),
             ],
           ),
@@ -187,6 +192,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _showFaqModal() {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -196,14 +202,14 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text('Bantuan & FAQ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-            SizedBox(height: 14),
-            Text('Q: Bagaimana cara menambah kendaraan?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-            Text('A: Buka tab Kendaraan, lalu tekan tombol "+ Tambah Kendaraan" di bagian atas.', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-            SizedBox(height: 10),
-            Text('Q: Apakah riwayat servis aman?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-            Text('A: Ya, setiap buku servis digital dienkripsi dengan algoritma hashing SHA-256 yang memverifikasi integritas data.', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+          children: [
+            Text(l10n.faqTitle, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            Text(l10n.faqQ1, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            Text(l10n.faqA1, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+            const SizedBox(height: 10),
+            Text(l10n.faqQ2, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            Text(l10n.faqA2, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
           ],
         ),
       ),
@@ -211,35 +217,35 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _showAboutModal() {
+    final l10n = AppLocalizations.of(context);
     showAboutDialog(
       context: context,
       applicationName: 'DriveMate',
       applicationVersion: '1.0.0 (Tugas Akhir)',
       applicationIcon: const Icon(Icons.directions_car_filled_rounded, size: 48, color: AppTheme.primary),
-      children: const [
-        Text(
-          'DriveMate — Personal Vehicle Assistant adalah aplikasi asisten pintar otomotif untuk mencatat perawatan, memantau rute dan sensor, asisten AI, serta demonstrasi blockchain servis digital.',
-        ),
+      children: [
+        Text(l10n.aboutDescription),
       ],
     );
   }
 
   Future<void> _logout() async {
+    final l10n = AppLocalizations.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        title: const Text('Konfirmasi Logout', style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text('Apakah Anda yakin ingin keluar dari akun DriveMate Anda?'),
+        title: Text(l10n.logoutConfirmTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
+        content: Text(l10n.logoutConfirmMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Batal'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Logout'),
+            child: Text(l10n.logout),
           ),
         ],
       ),
@@ -268,6 +274,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final user = _userRepo.currentUser ??
         UserProfile(name: 'Andi Pratama', email: 'andi@email.com', phone: '081234567890');
 
@@ -277,9 +284,9 @@ class _ProfilePageState extends State<ProfilePage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           children: [
-            const Text(
-              'Profil',
-              style: TextStyle(
+            Text(
+              l10n.profileTitle,
+              style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
                 color: AppTheme.textPrimary,
@@ -337,7 +344,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     ),
                     onPressed: () => _editProfileDialog(user),
-                    child: const Text('Edit Profil', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    child: Text(l10n.editProfile, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                   ),
                 ],
               ),
@@ -381,18 +388,18 @@ class _ProfilePageState extends State<ProfilePage> {
                       child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 26),
                     ),
                     const SizedBox(width: 14),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Main Mini-Game 2D',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                            l10n.miniGameTitle,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
-                            'Vehicle Runner • Hindari rintangan di jalan',
-                            style: TextStyle(color: Colors.white70, fontSize: 11),
+                            l10n.miniGameSubtitle,
+                            style: const TextStyle(color: Colors.white70, fontSize: 11),
                           ),
                         ],
                       ),
@@ -416,13 +423,13 @@ class _ProfilePageState extends State<ProfilePage> {
                 children: [
                   _menuTile(
                     icon: Icons.person_outline_rounded,
-                    title: 'Data Pengguna',
+                    title: l10n.menuUserData,
                     onTap: () => _showDataSheet(user),
                   ),
                   const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                   _menuTile(
                     icon: Icons.directions_car_outlined,
-                    title: 'Data Kendaraan',
+                    title: l10n.menuVehicles,
                     onTap: () {
                       if (widget.onNavigateTab != null) {
                         widget.onNavigateTab!(1); // Tab Kendaraan
@@ -432,7 +439,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                   _menuTile(
                     icon: Icons.settings_outlined,
-                    title: 'Pengaturan',
+                    title: l10n.menuSettings,
                     onTap: () {
                       Navigator.push(
                         context,
@@ -443,13 +450,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                   _menuTile(
                     icon: Icons.lock_outline_rounded,
-                    title: 'Keamanan & Biometrik',
+                    title: l10n.menuSecurity,
                     onTap: () => _showSecurityModal(user),
                   ),
                   const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                   _menuTile(
                     icon: Icons.history_rounded,
-                    title: 'Riwayat Aktivitas',
+                    title: l10n.menuHistory,
                     onTap: () {
                       Navigator.push(
                         context,
@@ -459,14 +466,25 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                   _menuTile(
+                    icon: Icons.rate_review_outlined,
+                    title: l10n.menuFeedback,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+                  _menuTile(
                     icon: Icons.help_outline_rounded,
-                    title: 'Bantuan & FAQ',
+                    title: l10n.menuFaq,
                     onTap: _showFaqModal,
                   ),
                   const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                   _menuTile(
                     icon: Icons.info_outline_rounded,
-                    title: 'Tentang Aplikasi',
+                    title: l10n.menuAbout,
                     onTap: _showAboutModal,
                   ),
                 ],
@@ -487,7 +505,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 onPressed: _logout,
                 icon: const Icon(Icons.logout_rounded, size: 20),
-                label: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w800)),
+                label: Text(l10n.logout, style: const TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),
           ],
