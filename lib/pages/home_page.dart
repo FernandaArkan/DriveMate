@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../database/database_helper.dart';
+import '../localization/app_localizations.dart';
 import '../models/reminder_item.dart';
 import '../models/vehicle.dart';
 import '../repositories/user_repository.dart';
 import '../repositories/vehicle_repository.dart';
+import '../services/language_service.dart';
+import '../services/timezone_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/section_header.dart';
-import 'conversion_page.dart';
+import 'activity_history_page.dart';
+import 'feedback_page.dart';
+import 'game_page.dart';
 import 'notifications_page.dart';
 import 'service_history_page.dart';
+import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.onNavigateTab});
@@ -34,6 +40,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _vehicleRepo.addListener(_onDataUpdated);
     _userRepo.addListener(_onDataUpdated);
+    LanguageService.instance.addListener(_onDataUpdated);
     _initData();
   }
 
@@ -47,6 +54,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _vehicleRepo.removeListener(_onDataUpdated);
     _userRepo.removeListener(_onDataUpdated);
+    LanguageService.instance.removeListener(_onDataUpdated);
     super.dispose();
   }
 
@@ -86,14 +94,174 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _showMoreMenu(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.apps_rounded, color: AppTheme.primary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    l10n.moreFeatures,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _moreMenuItem(
+                icon: Icons.settings_outlined,
+                color: AppTheme.primary,
+                title: l10n.menuSettings,
+                subtitle: l10n.settingsMenuSub,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsPage()),
+                  );
+                },
+              ),
+              const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+              _moreMenuItem(
+                icon: Icons.history_rounded,
+                color: const Color(0xFF20B486),
+                title: l10n.menuHistory,
+                subtitle: l10n.historyMenuSub,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ActivityHistoryPage()),
+                  );
+                },
+              ),
+              const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+              _moreMenuItem(
+                icon: Icons.sports_esports_outlined,
+                color: const Color(0xFF0288D1),
+                title: l10n.miniGameTitle,
+                subtitle: l10n.miniGameSubtitle,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const GamePage()),
+                  );
+                },
+              ),
+              const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
+              _moreMenuItem(
+                icon: Icons.rate_review_outlined,
+                color: const Color(0xFFFFA53D),
+                title: l10n.menuFeedback,
+                subtitle: l10n.feedbackMenuSub,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _moreMenuItem({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppTheme.textSecondary,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final vehicle = _vehicleRepo.primaryVehicle ??
         (_vehicleRepo.vehicles.isNotEmpty ? _vehicleRepo.vehicles.first : null);
     final user = _userRepo.currentUser;
     final userName = user != null && user.name.isNotEmpty
         ? user.name.split(' ').first
-        : 'Pengguna';
+        : (l10n.isEnglish ? 'Driver' : 'Pengguna');
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -109,7 +277,7 @@ class _HomePageState extends State<HomePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Halo, $userName 👋',
+                        '${l10n.hello}, $userName 👋',
                         style: const TextStyle(
                           color: AppTheme.textPrimary,
                           fontSize: 23,
@@ -117,9 +285,9 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       const SizedBox(height: 5),
-                      const Text(
-                        'Selamat datang kembali di DriveMate!',
-                        style: TextStyle(
+                      Text(
+                        l10n.homeWelcomeBack,
+                        style: const TextStyle(
                           color: AppTheme.textSecondary,
                           fontSize: 12,
                         ),
@@ -157,12 +325,14 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 22),
 
             // KARTU KENDARAAN (Mockup Layar 3)
-            _buildVehicleCard(vehicle),
+            _buildVehicleCard(vehicle, l10n),
 
             const SizedBox(height: 26),
 
             // AKSES CEPAT (Mockup Layar 3)
-            const SectionHeader(title: 'Akses Cepat'),
+            SectionHeader(
+              title: l10n.isEnglish ? 'Quick Actions' : 'Akses Cepat',
+            ),
             const SizedBox(height: 14),
 
             Row(
@@ -170,7 +340,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _QuickAction(
                     icon: Icons.build_rounded,
-                    label: 'Servis',
+                    label: l10n.quickService,
                     onTap: () {
                       Navigator.push(
                         context,
@@ -184,7 +354,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _QuickAction(
                     icon: Icons.location_on_rounded,
-                    label: 'Lokasi',
+                    label: l10n.quickLocation,
                     onTap: () {
                       if (widget.onNavigateTab != null) {
                         widget.onNavigateTab!(2); // Tab Perjalanan
@@ -195,7 +365,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _QuickAction(
                     icon: Icons.smart_toy_rounded,
-                    label: 'AI Assistant',
+                    label: l10n.quickAiAssistant,
                     onTap: () {
                       if (widget.onNavigateTab != null) {
                         widget.onNavigateTab!(3); // Tab AI
@@ -206,15 +376,8 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _QuickAction(
                     icon: Icons.more_horiz_rounded,
-                    label: 'Lainnya',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ConversionPage(),
-                        ),
-                      );
-                    },
+                    label: l10n.quickMore,
+                    onTap: () => _showMoreMenu(context),
                   ),
                 ),
               ],
@@ -224,8 +387,8 @@ class _HomePageState extends State<HomePage> {
 
             // PENGINGAT (Dinamis dari Database)
             SectionHeader(
-              title: 'Pengingat',
-              actionLabel: 'Lihat Semua',
+              title: l10n.reminders,
+              actionLabel: l10n.viewAll,
               onAction: () {
                 Navigator.push(
                   context,
@@ -253,18 +416,18 @@ class _HomePageState extends State<HomePage> {
                   borderRadius: BorderRadius.circular(19),
                   border: Border.all(color: const Color(0xFFE8EDF5)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.check_circle_outline_rounded,
                       color: AppTheme.success,
                       size: 26,
                     ),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Tidak ada pengingat aktif saat ini. Semua jadwal servis & pajak terpantau aman.',
-                        style: TextStyle(
+                        l10n.noRemindersHome,
+                        style: const TextStyle(
                           fontSize: 12,
                           color: AppTheme.textSecondary,
                           fontWeight: FontWeight.w600,
@@ -294,9 +457,9 @@ class _HomePageState extends State<HomePage> {
                     title: reminder.title,
                     description: reminder.message,
                     detail: reminder.targetDate != null
-                        ? 'Jatuh tempo: ${reminder.targetDate}'
+                        ? '${l10n.dueLabel}: ${TimeZoneService.instance.formatFlexibleString(reminder.targetDate!)}'
                         : (reminder.targetMileage != null
-                            ? 'Target: ${_formatMileage(reminder.targetMileage!)} km'
+                            ? '${l10n.targetLabel}: ${_formatMileage(reminder.targetMileage!)} km'
                             : reminder.timeAgo),
                     onTap: () {
                       Navigator.push(
@@ -313,7 +476,7 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 24),
 
             // RINGKASAN KENDARAAN (Dinamis Aktual)
-            const SectionHeader(title: 'Ringkasan Kendaraan'),
+            SectionHeader(title: l10n.vehicleSummary),
             const SizedBox(height: 12),
 
             Row(
@@ -321,10 +484,10 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _SummaryCard(
                     icon: Icons.directions_car_outlined,
-                    label: 'Total Kendaraan',
+                    label: l10n.totalVehicles,
                     value: _vehicleRepo.isLoading
                         ? '...'
-                        : '${_vehicleRepo.vehicles.length} unit',
+                        : '${_vehicleRepo.vehicles.length} ${l10n.unitLabel}',
                     color: AppTheme.cyan,
                   ),
                 ),
@@ -332,10 +495,10 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _SummaryCard(
                     icon: Icons.build_outlined,
-                    label: 'Total Servis',
+                    label: l10n.totalServices,
                     value: _isLoadingSummary
                         ? '...'
-                        : '$_totalServices kali',
+                        : '$_totalServices ${l10n.timesLabel}',
                     color: AppTheme.primary,
                   ),
                 ),
@@ -343,7 +506,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _SummaryCard(
                     icon: Icons.notifications_active_outlined,
-                    label: 'Pengingat Aktif',
+                    label: l10n.activeReminders,
                     value: _isLoadingSummary
                         ? '...'
                         : '$_activeRemindersCount',
@@ -358,7 +521,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildVehicleCard(Vehicle? vehicle) {
+  Widget _buildVehicleCard(Vehicle? vehicle, AppLocalizations l10n) {
     if (vehicle == null) {
       return Container(
         padding: const EdgeInsets.all(22),
@@ -389,19 +552,19 @@ class _HomePageState extends State<HomePage> {
               size: 46,
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Belum Ada Kendaraan',
-              style: TextStyle(
+            Text(
+              l10n.noVehicleTitle,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Tambahkan kendaraan untuk mulai memantau servis, jarak tempuh, dan pajak.',
+            Text(
+              l10n.noVehicleDesc,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Color(0xFFBFD7F1),
                 fontSize: 11,
               ),
@@ -414,7 +577,7 @@ class _HomePageState extends State<HomePage> {
                 }
               },
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('Tambah Kendaraan'),
+              label: Text(l10n.addVehicle),
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 foregroundColor: Colors.white,
@@ -430,7 +593,7 @@ class _HomePageState extends State<HomePage> {
     final plate = vehicle.plate;
     final mileageStr = '${_formatMileage(vehicle.mileage)} km';
     final fuelStr = '${vehicle.fuelLevel}%';
-    final statusStr = vehicle.status.isNotEmpty ? vehicle.status : 'Dalam kondisi baik';
+    final statusStr = vehicle.status.isNotEmpty ? vehicle.status : l10n.inGoodCondition;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -559,7 +722,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _VehicleStat(
                     icon: Icons.speed_rounded,
-                    label: 'Jarak Tempuh',
+                    label: l10n.mileage,
                     value: mileageStr,
                   ),
                 ),
@@ -567,7 +730,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _VehicleStat(
                     icon: Icons.local_gas_station_rounded,
-                    label: 'Bahan Bakar',
+                    label: l10n.fuelLevel,
                     value: fuelStr,
                   ),
                 ),

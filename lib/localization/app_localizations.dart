@@ -123,7 +123,93 @@ class AppLocalizations {
   String get sectionPreferences =>
       isEnglish ? 'App Preferences' : 'Preferensi Aplikasi';
   String get language => isEnglish ? 'Language' : 'Bahasa';
+  String get selectLanguage => isEnglish ? 'Select Language' : 'Pilih Bahasa';
+  String get currency => isEnglish ? 'Currency' : 'Mata Uang';
+  String get currencySubtitle => isEnglish
+      ? 'Select the app primary display currency'
+      : 'Pilih mata uang utama tampilan aplikasi';
+  String get selectCurrency => isEnglish ? 'Select Currency' : 'Pilih Mata Uang';
+  String get timeZone => isEnglish ? 'Time Zone' : 'Zona Waktu';
+  String get timeZoneSubtitle => isEnglish
+      ? 'Select display time zone for schedules and activities'
+      : 'Pilih zona waktu tampilan jadwal dan riwayat';
+  String get selectTimeZone =>
+      isEnglish ? 'Select Time Zone' : 'Pilih Zona Waktu';
   String get distanceUnit => isEnglish ? 'Distance Unit' : 'Satuan Jarak';
+
+  // Home Page
+  String get hello => isEnglish ? 'Hello' : 'Halo';
+  String get homeWelcomeBack => isEnglish
+      ? 'Welcome back to DriveMate!'
+      : 'Selamat datang kembali di DriveMate!';
+  String get quickService => isEnglish ? 'Service' : 'Servis';
+  String get quickLocation => isEnglish ? 'Location' : 'Lokasi';
+  String get quickAiAssistant => 'AI Assistant';
+  String get quickMore => isEnglish ? 'More' : 'Lainnya';
+  String get reminders => isEnglish ? 'Reminders' : 'Pengingat';
+  String get viewAll => isEnglish ? 'View All' : 'Lihat Semua';
+  String get noRemindersHome => isEnglish
+      ? 'No active reminders currently. All service & tax schedules are on track.'
+      : 'Tidak ada pengingat aktif saat ini. Semua jadwal servis & pajak terpantau aman.';
+  String get dueLabel => isEnglish ? 'Due' : 'Jatuh tempo';
+  String get targetLabel => isEnglish ? 'Target' : 'Target';
+  String get vehicleSummary =>
+      isEnglish ? 'Vehicle Summary' : 'Ringkasan Kendaraan';
+  String get totalVehicles =>
+      isEnglish ? 'Total Vehicles' : 'Total Kendaraan';
+  String get totalServices =>
+      isEnglish ? 'Total Services' : 'Total Servis';
+  String get activeReminders =>
+      isEnglish ? 'Active Reminders' : 'Pengingat Aktif';
+  String get unitLabel => isEnglish ? 'units' : 'unit';
+  String get timesLabel => isEnglish ? 'times' : 'kali';
+  String get noVehicleTitle =>
+      isEnglish ? 'No Vehicle Added' : 'Belum Ada Kendaraan';
+  String get noVehicleDesc => isEnglish
+      ? 'Add a vehicle to start tracking services, mileage, and taxes.'
+      : 'Tambahkan kendaraan untuk mulai memantau servis, jarak tempuh, dan pajak.';
+  String get addVehicle => isEnglish ? 'Add Vehicle' : 'Tambah Kendaraan';
+  String get inGoodCondition =>
+      isEnglish ? 'In good condition' : 'Dalam kondisi baik';
+  String get mileage => isEnglish ? 'Mileage' : 'Jarak Tempuh';
+  String get fuelLevel => isEnglish ? 'Fuel Level' : 'Bahan Bakar';
+
+  // Fitur Lainnya (Menu ...)
+  String get moreFeatures => isEnglish ? 'More Features' : 'Fitur Lainnya';
+  String get settingsMenuSub => isEnglish
+      ? 'Language, currency & time zone preferences'
+      : 'Preferensi bahasa, mata uang & zona waktu';
+  String get historyMenuSub => isEnglish
+      ? 'View all vehicle and app activities'
+      : 'Pantau seluruh riwayat aktivitas aplikasi';
+  String get feedbackMenuSub => isEnglish
+      ? 'Share your impressions & suggestions'
+      : 'Sampaikan saran dan masukan Anda';
+
+  // Activity History Page
+  String get activityHistoryTitle =>
+      isEnglish ? 'Activity History' : 'Riwayat Aktivitas';
+  String get filterAll => isEnglish ? 'All' : 'Semua';
+  String get filterVehicles => isEnglish ? 'Vehicles' : 'Kendaraan';
+  String get filterServices => isEnglish ? 'Services' : 'Servis';
+  String get filterTrips => isEnglish ? 'Trips' : 'Perjalanan';
+  String get filterReminders => isEnglish ? 'Reminders' : 'Pengingat';
+  String get noActivityTitle =>
+      isEnglish ? 'No Activity History Yet' : 'Belum Ada Riwayat Aktivitas';
+  String get noActivityDesc => isEnglish
+      ? 'Activities such as vehicle additions, services, and trips will be tracked here.'
+      : 'Aktivitas seperti penambahan kendaraan, servis berkala, dan rute perjalanan akan tercatat secara nyata di sini.';
+
+  // Estimasi Biaya Kendaraan
+  String get costEstimationTitle =>
+      isEnglish ? 'Maintenance Cost Estimation' : 'Estimasi Biaya Perawatan';
+  String get nextPeriodicService =>
+      isEnglish ? 'Next Periodic Service' : 'Servis Berkala Berikutnya';
+  String get oilChangeEstimation =>
+      isEnglish ? 'Estimated Oil Change' : 'Estimasi Ganti Oli';
+  String get annualTax => isEnglish ? 'Annual Vehicle Tax' : 'Pajak Tahunan PKB';
+  String get yearServiceExpense =>
+      isEnglish ? 'This Year Service Expense' : 'Pengeluaran Servis Tahun Ini';
   String get sectionSync => isEnglish
       ? 'Synchronization & Backend Server'
       : 'Sinkronisasi & Server Backend';

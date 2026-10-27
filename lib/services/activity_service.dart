@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../database/database_helper.dart';
 import '../theme/app_theme.dart';
+import 'currency_service.dart';
+import 'timezone_service.dart';
 
 enum ActivityCategory {
   all,
@@ -32,7 +33,7 @@ class UserActivity {
   });
 
   String get formattedDate {
-    return DateFormat('dd MMM yyyy, HH:mm').format(dateTime);
+    return TimeZoneService.instance.formatDateTime(dateTime);
   }
 }
 
@@ -85,7 +86,7 @@ class ActivityService {
             id: 'serv_${s.id ?? shortHash}',
             category: ActivityCategory.service,
             title: 'Servis: ${s.title}',
-            description: '${s.serviceType} di ${s.workshop} • Biaya: Rp ${_formatRupiah(s.cost)}',
+            description: '${s.serviceType} di ${s.workshop} • Biaya: ${CurrencyService.instance.format(s.cost)}',
             dateTime: parsedDate,
             icon: Icons.build_circle_rounded,
             color: const Color(0xFF20B486),
@@ -137,12 +138,5 @@ class ActivityService {
     }
 
     return activities;
-  }
-
-  static String _formatRupiah(int amount) {
-    return amount.toString().replaceAllMapped(
-          RegExp(r'\B(?=(\d{3})+(?!\d))'),
-          (_) => '.',
-        );
   }
 }

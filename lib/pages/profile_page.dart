@@ -3,6 +3,7 @@ import '../localization/app_localizations.dart';
 import '../models/user_profile.dart';
 import '../repositories/user_repository.dart';
 import '../services/biometric_service.dart';
+import '../services/language_service.dart';
 import '../theme/app_theme.dart';
 import 'activity_history_page.dart';
 import 'feedback_page.dart';
@@ -25,11 +26,13 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _userRepo.addListener(_onUserUpdated);
+    LanguageService.instance.addListener(_onUserUpdated);
   }
 
   @override
   void dispose() {
     _userRepo.removeListener(_onUserUpdated);
+    LanguageService.instance.removeListener(_onUserUpdated);
     super.dispose();
   }
 
@@ -229,6 +232,58 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  void _showLanguageDialog() {
+    final l10n = AppLocalizations.of(context);
+    final langService = LanguageService.instance;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: Text(
+          l10n.selectLanguage,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.language_rounded, color: AppTheme.primary),
+              title: const Text('Bahasa Indonesia'),
+              trailing: !langService.isEnglish
+                  ? const Icon(Icons.check_circle_rounded, color: AppTheme.primary)
+                  : null,
+              onTap: () async {
+                Navigator.pop(ctx);
+                await langService.setLanguage('Bahasa Indonesia');
+                if (mounted) setState(() {});
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.language_rounded, color: AppTheme.primary),
+              title: const Text('English'),
+              trailing: langService.isEnglish
+                  ? const Icon(Icons.check_circle_rounded, color: AppTheme.primary)
+                  : null,
+              onTap: () async {
+                Navigator.pop(ctx);
+                await langService.setLanguage('English');
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.close),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _logout() async {
     final l10n = AppLocalizations.of(context);
     final confirm = await showDialog<bool>(
@@ -284,13 +339,48 @@ class _ProfilePageState extends State<ProfilePage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           children: [
-            Text(
-              l10n.profileTitle,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: AppTheme.textPrimary,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    l10n.profileTitle,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: _showLanguageDialog,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppTheme.primary.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.language_rounded, size: 16, color: AppTheme.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          LanguageService.instance.isEnglish ? 'EN' : 'ID',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
 
@@ -517,6 +607,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _menuTile({
     required IconData icon,
     required String title,
+    String? subtitle,
     required VoidCallback onTap,
   }) {
     return InkWell(
@@ -529,13 +620,28 @@ class _ProfilePageState extends State<ProfilePage> {
             Icon(icon, color: AppTheme.textPrimary, size: 22),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             const Icon(

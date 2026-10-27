@@ -3,6 +3,7 @@ import '../database/database_helper.dart';
 import '../models/service_record.dart';
 import '../models/vehicle.dart';
 import '../repositories/vehicle_repository.dart';
+import '../services/currency_service.dart';
 import '../theme/app_theme.dart';
 
 class ServiceHistoryPage extends StatefulWidget {
@@ -27,6 +28,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
   void initState() {
     super.initState();
     _repo.addListener(_onRepoUpdated);
+    CurrencyService.instance.addListener(_onSettingsUpdated);
     _selectedVehicle = widget.initialVehicle;
     _initData();
   }
@@ -34,7 +36,12 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
   @override
   void dispose() {
     _repo.removeListener(_onRepoUpdated);
+    CurrencyService.instance.removeListener(_onSettingsUpdated);
     super.dispose();
+  }
+
+  void _onSettingsUpdated() {
+    if (mounted) setState(() {});
   }
 
   void _onRepoUpdated() {
@@ -602,7 +609,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                   ),
                 ),
                 Text(
-                  rec.cost > 0 ? 'Rp ${_formatNumber(rec.cost)}' : '',
+                  rec.cost > 0 ? CurrencyService.instance.format(rec.cost) : '',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

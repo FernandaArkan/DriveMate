@@ -13,8 +13,10 @@ import 'pages/profile_page.dart';
 import 'pages/splash_page.dart';
 import 'pages/trips_page.dart';
 import 'pages/vehicles_page.dart';
+import 'services/currency_service.dart';
 import 'services/language_service.dart';
 import 'services/notification_service.dart';
+import 'services/timezone_service.dart';
 import 'theme/app_theme.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -24,6 +26,8 @@ void main() async {
   await initializeDateFormatting('id_ID', null);
   await initializeDateFormatting('en_US', null);
   await LanguageService.instance.init();
+  await CurrencyService.instance.init();
+  await TimeZoneService.instance.init();
   initPlatformDatabase();
   await NotificationService.instance.init();
   NotificationService.instance.onNotificationClick = (payload) {
@@ -41,7 +45,11 @@ class DriveMateApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: LanguageService.instance,
+      listenable: Listenable.merge([
+        LanguageService.instance,
+        CurrencyService.instance,
+        TimeZoneService.instance,
+      ]),
       builder: (context, _) {
         return MaterialApp(
           navigatorKey: rootNavigatorKey,

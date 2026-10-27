@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../localization/app_localizations.dart';
 import '../services/activity_service.dart';
+import '../services/language_service.dart';
+import '../services/timezone_service.dart';
 import '../theme/app_theme.dart';
 
 class ActivityHistoryPage extends StatefulWidget {
@@ -15,12 +18,25 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
 
   List<UserActivity> _allActivities = [];
   bool _isLoading = true;
-  String _selectedFilter = 'Semua';
+  ActivityCategory _selectedFilter = ActivityCategory.all;
 
   @override
   void initState() {
     super.initState();
     _loadActivities();
+    TimeZoneService.instance.addListener(_onSettingsChanged);
+    LanguageService.instance.addListener(_onSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    TimeZoneService.instance.removeListener(_onSettingsChanged);
+    LanguageService.instance.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadActivities() async {
@@ -37,30 +53,43 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
   }
 
   List<UserActivity> get _filteredActivities {
-    if (_selectedFilter == 'Semua') return _allActivities;
-    if (_selectedFilter == 'Kendaraan') {
-      return _allActivities.where((a) => a.category == ActivityCategory.vehicle).toList();
+    if (_selectedFilter == ActivityCategory.all) return _allActivities;
+    return _allActivities.where((a) => a.category == _selectedFilter).toList();
+  }
+
+  String _filterLabel(ActivityCategory cat, AppLocalizations l10n) {
+    switch (cat) {
+      case ActivityCategory.all:
+        return l10n.filterAll;
+      case ActivityCategory.vehicle:
+        return l10n.filterVehicles;
+      case ActivityCategory.service:
+        return l10n.filterServices;
+      case ActivityCategory.trip:
+        return l10n.filterTrips;
+      case ActivityCategory.reminder:
+        return l10n.filterReminders;
     }
-    if (_selectedFilter == 'Servis') {
-      return _allActivities.where((a) => a.category == ActivityCategory.service).toList();
-    }
-    if (_selectedFilter == 'Perjalanan') {
-      return _allActivities.where((a) => a.category == ActivityCategory.trip).toList();
-    }
-    if (_selectedFilter == 'Pengingat') {
-      return _allActivities.where((a) => a.category == ActivityCategory.reminder).toList();
-    }
-    return _allActivities;
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    final filterOptions = [
+      ActivityCategory.all,
+      ActivityCategory.vehicle,
+      ActivityCategory.service,
+      ActivityCategory.trip,
+      ActivityCategory.reminder,
+    ];
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text(
-          'Riwayat Aktivitas',
-          style: TextStyle(
+        title: Text(
+          l10n.activityHistoryTitle,
+          style: const TextStyle(
             color: AppTheme.textPrimary,
             fontWeight: FontWeight.w800,
             fontSize: 18,
@@ -77,14 +106,16 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: ['Semua', 'Kendaraan', 'Servis', 'Perjalanan', 'Pengingat'].map((cat) {
+                  children: filterOptions.map((cat) {
                     final isSelected = _selectedFilter == cat;
+                    final label = _filterLabel(cat, l10n);
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
-                        label: Text(cat),
+                        label: Text(label),
                         selected: isSelected,
-                        onSelected: (_) => setState(() => _selectedFilter = cat),
+                        onSelected: (_) =>
+                            setState(() => _selectedFilter = cat),
                         labelStyle: TextStyle(
                           color: isSelected ? Colors.white : AppTheme.textPrimary,
                           fontSize: 12,
@@ -93,9 +124,12 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
                         selectedColor: AppTheme.primary,
                         backgroundColor: Colors.white,
                         side: BorderSide(
-                          color: isSelected ? AppTheme.primary : const Color(0xFFE2E9F3),
+                          color: isSelected
+                              ? AppTheme.primary
+                              : const Color(0xFFE2E9F3),
                         ),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20)),
                       ),
                     );
                   }).toList(),
@@ -122,19 +156,22 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
                   ),
                   child: Column(
                     children: [
-                      Icon(Icons.history_toggle_off_rounded, size: 54, color: Colors.grey.shade400),
+                      Icon(Icons.history_toggle_off_rounded,
+                          size: 54, color: Colors.grey.shade400),
                       const SizedBox(height: 14),
-                      const Text(
-                        'Belum Ada Riwayat Aktivitas',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+                      Text(
+                        l10n.noActivityTitle,
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textPrimary),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        _selectedFilter == 'Semua'
-                            ? 'Aktivitas seperti penambahan kendaraan, servis berkala, dan rute perjalanan akan tercatat secara nyata di sini.'
-                            : 'Belum ada aktivitas pada kategori $_selectedFilter.',
+                        l10n.noActivityDesc,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.textSecondary),
                       ),
                     ],
                   ),
@@ -193,11 +230,14 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
                               const SizedBox(height: 6),
                               Row(
                                 children: [
-                                  const Icon(Icons.access_time_rounded, size: 12, color: AppTheme.textSecondary),
+                                  const Icon(Icons.access_time_rounded,
+                                      size: 12, color: AppTheme.textSecondary),
                                   const SizedBox(width: 4),
                                   Text(
                                     act.formattedDate,
-                                    style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary),
+                                    style: const TextStyle(
+                                        fontSize: 10,
+                                        color: AppTheme.textSecondary),
                                   ),
                                 ],
                               ),

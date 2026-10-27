@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../localization/app_localizations.dart';
 import '../models/vehicle.dart';
 import '../repositories/vehicle_repository.dart';
+import '../services/currency_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/vehicle_form_dialog.dart';
 import 'service_history_page.dart';
@@ -223,6 +225,9 @@ class _VehiclesPageState extends State<VehiclesPage> {
   }
 
   void _showCostModal(Vehicle vehicle) {
+    final l10n = AppLocalizations.of(context);
+    final currencyService = CurrencyService.instance;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -236,9 +241,9 @@ class _VehiclesPageState extends State<VehiclesPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Estimasi Biaya Perawatan',
-                style: TextStyle(
+              Text(
+                l10n.costEstimationTitle,
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                   color: AppTheme.textPrimary,
@@ -250,17 +255,17 @@ class _VehiclesPageState extends State<VehiclesPage> {
                 style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
               ),
               const SizedBox(height: 18),
-              _detailRow('Servis Berkala Berikutnya', 'Rp 1.250.000'),
-              _detailRow('Estimasi Ganti Oli', 'Rp 450.000'),
-              _detailRow('Pajak Tahunan PKB', 'Rp 3.850.000'),
-              _detailRow('Pengeluaran Servis Tahun Ini', 'Rp 2.400.000'),
+              _detailRow(l10n.nextPeriodicService, currencyService.format(1250000)),
+              _detailRow(l10n.oilChangeEstimation, currencyService.format(450000)),
+              _detailRow(l10n.annualTax, currencyService.format(3850000)),
+              _detailRow(l10n.yearServiceExpense, currencyService.format(2400000)),
               const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
                   style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Kembali'),
+                  child: Text(l10n.close),
                 ),
               ),
             ],

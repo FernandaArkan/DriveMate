@@ -6,6 +6,7 @@ import '../models/reminder_item.dart';
 import '../models/vehicle.dart';
 import '../repositories/vehicle_repository.dart';
 import '../services/notification_service.dart';
+import '../services/timezone_service.dart';
 import '../theme/app_theme.dart';
 
 class NotificationsPage extends StatefulWidget {
@@ -329,7 +330,7 @@ class _NotificationsPageState extends State<NotificationsPage>
             final dateStr =
                 DateFormat('dd MMMM yyyy', 'id_ID').format(selectedDate);
             final timeStr =
-                '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} WIB';
+                '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} ${TimeZoneService.instance.currentAbbreviation}';
 
             return AlertDialog(
               insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -789,9 +790,9 @@ class _NotificationsPageState extends State<NotificationsPage>
           content: Text(
             isEditing
                 ? 'Jadwal pengingat "$title" berhasil diperbarui pada '
-                    '${DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(scheduledDateTime)} WIB.'
+                    '${TimeZoneService.instance.formatDateTime(scheduledDateTime)}.'
                 : 'Pengingat "$title" berhasil dijadwalkan pada '
-                    '${DateFormat('dd MMM yyyy, HH:mm', 'id_ID').format(scheduledDateTime)} WIB.',
+                    '${TimeZoneService.instance.formatDateTime(scheduledDateTime)}.',
           ),
           backgroundColor:
               scheduledSuccess ? AppTheme.success : AppTheme.warning,
@@ -1261,7 +1262,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                     size: 13, color: AppTheme.primary),
                 const SizedBox(width: 5),
                 Text(
-                  item.targetDate!,
+                  TimeZoneService.instance.formatFlexibleString(item.targetDate!),
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

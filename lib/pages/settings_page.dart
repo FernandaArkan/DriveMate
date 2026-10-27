@@ -4,8 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api_config.dart';
 import '../localization/app_localizations.dart';
+import '../services/currency_service.dart';
 import '../services/language_service.dart';
 import '../services/sync_service.dart';
+import '../services/timezone_service.dart';
 import '../theme/app_theme.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -18,6 +20,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final SyncService _syncService = SyncService.instance;
   final LanguageService _languageService = LanguageService.instance;
+  final CurrencyService _currencyService = CurrencyService.instance;
+  final TimeZoneService _timezoneService = TimeZoneService.instance;
 
   bool _isLoading = true;
 
@@ -28,6 +32,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // Preferensi
   String _language = 'Bahasa Indonesia';
+  String _currency = 'IDR';
+  String _timezone = 'Asia/Jakarta';
   String _distanceUnit = 'Kilometer (km)';
 
   static const String _keyReminderService = 'setting_reminder_service';
@@ -42,12 +48,16 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadSettings();
     _syncService.addListener(_onSyncUpdated);
     _languageService.addListener(_onLanguageUpdated);
+    _currencyService.addListener(_onCurrencyUpdated);
+    _timezoneService.addListener(_onTimeZoneUpdated);
   }
 
   @override
   void dispose() {
     _syncService.removeListener(_onSyncUpdated);
     _languageService.removeListener(_onLanguageUpdated);
+    _currencyService.removeListener(_onCurrencyUpdated);
+    _timezoneService.removeListener(_onTimeZoneUpdated);
     super.dispose();
   }
 
@@ -63,6 +73,22 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  void _onCurrencyUpdated() {
+    if (mounted) {
+      setState(() {
+        _currency = _currencyService.currentCurrencyCode;
+      });
+    }
+  }
+
+  void _onTimeZoneUpdated() {
+    if (mounted) {
+      setState(() {
+        _timezone = _timezoneService.currentTimeZoneId;
+      });
+    }
+  }
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -73,6 +99,8 @@ class _SettingsPageState extends State<SettingsPage> {
       _reminderTax = prefs.getBool(_keyReminderTax) ?? true;
       _reminderWeather = prefs.getBool(_keyReminderWeather) ?? true;
       _language = _languageService.languageName;
+      _currency = _currencyService.currentCurrencyCode;
+      _timezone = _timezoneService.currentTimeZoneId;
       _distanceUnit =
           prefs.getString(_keyDistanceUnit) ?? 'Kilometer (km)';
       _isLoading = false;
@@ -160,9 +188,13 @@ class _SettingsPageState extends State<SettingsPage> {
       await prefs.remove(_keyReminderTax);
       await prefs.remove(_keyReminderWeather);
       await prefs.remove(_keyLanguage);
+      await prefs.remove(CurrencyService.keyCurrency);
+      await prefs.remove(TimeZoneService.keyTimeZone);
       await prefs.remove(_keyDistanceUnit);
 
       await _languageService.setLanguage('Bahasa Indonesia');
+      await _currencyService.setCurrency('IDR');
+      await _timezoneService.setTimeZone('Asia/Jakarta');
       await _loadSettings();
 
       if (!mounted) return;
@@ -332,6 +364,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     clipBehavior: Clip.antiAlias,
                     child: Column(
                       children: [
+                        // Bahasa
                         ListTile(
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 18,
@@ -383,6 +416,107 @@ class _SettingsPageState extends State<SettingsPage> {
                           endIndent: 18,
                           color: Color(0xFFF0F4FA),
                         ),
+                        // Mata Uang
+                        ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 4,
+                          ),
+                          leading: const Icon(
+                            Icons.payments_rounded,
+                            color: AppTheme.primary,
+                          ),
+                          title: Text(
+                            l10n.currency,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _currencyService.currentCurrency.label,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                          trailing: DropdownButton<String>(
+                            value: _currency,
+                            underline: const SizedBox.shrink(),
+                            items: CurrencyService.supportedCurrencies.values
+                                .map(
+                                  (c) => DropdownMenuItem(
+                                    value: c.code,
+                                    child: Text('${c.code} (${c.symbol})'),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (val) async {
+                              if (val != null) {
+                                await _currencyService.setCurrency(val);
+                                if (!mounted) return;
+                                setState(() => _currency = val);
+                              }
+                            },
+                          ),
+                        ),
+                        const Divider(
+                          height: 1,
+                          indent: 18,
+                          endIndent: 18,
+                          color: Color(0xFFF0F4FA),
+                        ),
+                        // Zona Waktu
+                        ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 4,
+                          ),
+                          leading: const Icon(
+                            Icons.schedule_rounded,
+                            color: AppTheme.primary,
+                          ),
+                          title: Text(
+                            l10n.timeZone,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _timezoneService.currentLabel,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                          trailing: DropdownButton<String>(
+                            value: _timezone,
+                            underline: const SizedBox.shrink(),
+                            items: TimeZoneService.supportedTimeZones.values
+                                .map(
+                                  (tz) => DropdownMenuItem(
+                                    value: tz.id,
+                                    child: Text(tz.abbreviation),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (val) async {
+                              if (val != null) {
+                                await _timezoneService.setTimeZone(val);
+                                if (!mounted) return;
+                                setState(() => _timezone = val);
+                              }
+                            },
+                          ),
+                        ),
+                        const Divider(
+                          height: 1,
+                          indent: 18,
+                          endIndent: 18,
+                          color: Color(0xFFF0F4FA),
+                        ),
+                        // Satuan Jarak
                         ListTile(
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 18,
