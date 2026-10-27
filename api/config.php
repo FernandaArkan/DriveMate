@@ -39,7 +39,7 @@ $loadEnv = function ($filePath) {
             $val = substr($val, 1, -1);
         }
 
-        // Keep hosting environment variables as the priority.
+        // Do not override variables provided by hosting.
         if (getenv($key) === false) {
             putenv("{$key}={$val}");
             $_ENV[$key] = $val;
@@ -51,24 +51,44 @@ $loadEnv = function ($filePath) {
 $loadEnv(__DIR__ . '/.env');
 $loadEnv(dirname(__DIR__) . '/.env');
 
+// Read environment variables with fallback sources.
+$getEnv = function ($key, $default = '') {
+    $value = getenv($key);
+
+    if ($value !== false && $value !== '') {
+        return $value;
+    }
+
+    if (isset($_ENV[$key]) && $_ENV[$key] !== '') {
+        return $_ENV[$key];
+    }
+
+    if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') {
+        return $_SERVER[$key];
+    }
+
+    return $default;
+};
+
 return [
     // PostgreSQL configuration.
-    'host' => getenv('DB_HOST') ?: '127.0.0.1',
-    'port' => getenv('DB_PORT') ?: '5432',
-    'database' => getenv('DB_NAME') ?: 'drivemate_db',
-    'username' => getenv('DB_USER') ?: 'postgres',
-    'password' => getenv('DB_PASSWORD') !== false
-        ? getenv('DB_PASSWORD')
-        : '',
-    'sslmode' => getenv('DB_SSLMODE') ?: 'prefer',
+    'host' => $getEnv('DB_HOST', '127.0.0.1'),
+    'port' => $getEnv('DB_PORT', '5432'),
+    'database' => $getEnv('DB_NAME', 'drivemate_db'),
+    'username' => $getEnv('DB_USER', 'postgres'),
+    'password' => $getEnv('DB_PASSWORD'),
+    'sslmode' => $getEnv('DB_SSLMODE', 'prefer'),
 
     // Groq AI configuration.
-    'ai_provider' => getenv('AI_PROVIDER') ?: 'groq',
-    'ai_model' => getenv('AI_MODEL') ?: 'openai/gpt-oss-120b',
-    'groq_api_key' => getenv('GROQ_API_KEY') ?: '',
+    'ai_provider' => $getEnv('AI_PROVIDER', 'groq'),
+    'ai_model' => $getEnv(
+        'AI_MODEL',
+        'openai/gpt-oss-120b'
+    ),
+    'groq_api_key' => $getEnv('GROQ_API_KEY'),
 
     // Retain compatibility with other AI providers.
-    'gemini_api_key' => getenv('GEMINI_API_KEY')
-        ?: (getenv('AI_API_KEY') ?: ''),
-    'openai_api_key' => getenv('OPENAI_API_KEY') ?: '',
+    'gemini_api_key' => $getEnv('GEMINI_API_KEY')
+        ?: $getEnv('AI_API_KEY'),
+    'openai_api_key' => $getEnv('OPENAI_API_KEY'),
 ];
