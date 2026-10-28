@@ -13,11 +13,14 @@ import 'pages/profile_page.dart';
 import 'pages/splash_page.dart';
 import 'pages/trips_page.dart';
 import 'pages/vehicles_page.dart';
+import 'repositories/user_repository.dart';
 import 'services/currency_service.dart';
 import 'services/language_service.dart';
 import 'services/notification_service.dart';
+import 'services/security_service.dart';
 import 'services/timezone_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_lock_overlay.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -29,6 +32,8 @@ void main() async {
   await CurrencyService.instance.init();
   await TimeZoneService.instance.init();
   initPlatformDatabase();
+  await UserRepository.instance.initSession();
+  await SecurityService.instance.init();
   await NotificationService.instance.init();
   NotificationService.instance.onNotificationClick = (payload) {
     rootNavigatorKey.currentState?.push(
@@ -39,8 +44,34 @@ void main() async {
   runApp(const DriveMateApp());
 }
 
-class DriveMateApp extends StatelessWidget {
+class DriveMateApp extends StatefulWidget {
   const DriveMateApp({super.key});
+
+  @override
+  State<DriveMateApp> createState() => _DriveMateAppState();
+}
+
+class _DriveMateAppState extends State<DriveMateApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      SecurityService.instance.onAppPaused();
+    } else if (state == AppLifecycleState.resumed) {
+      SecurityService.instance.onAppResumed();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +80,8 @@ class DriveMateApp extends StatelessWidget {
         LanguageService.instance,
         CurrencyService.instance,
         TimeZoneService.instance,
+        SecurityService.instance,
+        UserRepository.instance,
       ]),
       builder: (context, _) {
         return MaterialApp(
@@ -71,24 +104,26 @@ class DriveMateApp extends StatelessWidget {
             '/home': (context) => const MainNavigation(),
           },
           builder: (context, child) {
-            return ColoredBox(
-              color: const Color(0xFFE5EAF2),
-              child: Center(
-                child: Container(
-                  width: double.infinity,
-                  height: double.infinity,
-                  constraints: const BoxConstraints(maxWidth: 430),
-                  decoration: BoxDecoration(
-                    color: AppTheme.background,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 30,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+            return AppLockOverlay(
+              child: ColoredBox(
+                color: const Color(0xFFE5EAF2),
+                child: Center(
+                  child: Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 430),
+                    decoration: BoxDecoration(
+                      color: AppTheme.background,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 30,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: child ?? const SizedBox.shrink(),
                   ),
-                  child: child ?? const SizedBox.shrink(),
                 ),
               ),
             );

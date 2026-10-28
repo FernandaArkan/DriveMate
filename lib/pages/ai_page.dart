@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../localization/app_localizations.dart';
 import '../services/ai_service.dart';
 import '../theme/app_theme.dart';
 
@@ -15,14 +16,25 @@ class _AiPageState extends State<AiPage> {
   bool _isTyping = false;
   bool _isProcessing = false;
   int _activeRequestId = 0;
+  bool _initializedGreeting = false;
 
-  final List<AiChatMessage> _messages = [
-    AiChatMessage(
-      text: 'Halo! Saya asisten pintar otomotif DriveMate. Ada yang bisa saya bantu terkait kondisi kendaraan, jadwal servis, atau tips perawatan mobil & motor Anda?',
-      isUser: false,
-      time: '09:40',
-    ),
-  ];
+  final List<AiChatMessage> _messages = [];
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initializedGreeting) {
+      final l10n = AppLocalizations.of(context);
+      _messages.add(
+        AiChatMessage(
+          text: l10n.aiGreeting,
+          isUser: false,
+          time: '09:40',
+        ),
+      );
+      _initializedGreeting = true;
+    }
+  }
 
   @override
   void dispose() {
@@ -32,6 +44,7 @@ class _AiPageState extends State<AiPage> {
   }
 
   Future<void> _sendMessage() async {
+    final l10n = AppLocalizations.of(context);
     // Kunci eksekusi agar 1 pesan hanya menjalankan 1 request aktif dan tidak terjadi panggilan ganda
     if (_isProcessing || _isTyping) return;
 
@@ -72,7 +85,7 @@ class _AiPageState extends State<AiPage> {
         _isProcessing = false;
         _messages.add(
           AiChatMessage(
-            text: 'Gagal memproses respon AI: $e',
+            text: '${l10n.aiErrorPrefix}: $e',
             isUser: false,
             time: timeStr,
             isError: true,
@@ -91,12 +104,13 @@ class _AiPageState extends State<AiPage> {
   }
 
   void _clearChat() {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _messages
         ..clear()
         ..add(
           AiChatMessage(
-            text: 'Percakapan telah direset. Silakan tanyakan hal baru seputar kendaraan Anda.',
+            text: l10n.aiResetNotice,
             isUser: false,
             time: '${TimeOfDay.now().hour.toString().padLeft(2, "0")}:${TimeOfDay.now().minute.toString().padLeft(2, "0")}',
           ),
@@ -118,12 +132,14 @@ class _AiPageState extends State<AiPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text(
-          'AI Vehicle Assistant',
-          style: TextStyle(
+        title: Text(
+          l10n.aiTitle,
+          style: const TextStyle(
             color: AppTheme.textPrimary,
             fontWeight: FontWeight.w800,
             fontSize: 18,
@@ -132,7 +148,7 @@ class _AiPageState extends State<AiPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: AppTheme.textSecondary),
-            tooltip: 'Reset Percakapan',
+            tooltip: l10n.aiResetTooltip,
             onPressed: _clearChat,
           ),
         ],
@@ -160,22 +176,22 @@ class _AiPageState extends State<AiPage> {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'DriveMate AI Assistant',
-                          style: TextStyle(
+                          l10n.aiTitle,
+                          style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
                             color: AppTheme.textPrimary,
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'Menganalisis perawatan, gejala kerusakan, & rute',
-                          style: TextStyle(
+                          l10n.aiSubtitle,
+                          style: const TextStyle(
                             fontSize: 11,
                             color: AppTheme.textSecondary,
                           ),
@@ -215,7 +231,7 @@ class _AiPageState extends State<AiPage> {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'AI sedang memproses jawaban...',
+                      l10n.aiThinking,
                       style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey.shade600),
                     ),
                   ],
@@ -243,9 +259,9 @@ class _AiPageState extends State<AiPage> {
                             _sendMessage();
                           }
                         },
-                        decoration: const InputDecoration(
-                          hintText: 'Tanyakan kendala atau perawatan kendaraan...',
-                          hintStyle: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                        decoration: InputDecoration(
+                          hintText: l10n.aiInputHint,
+                          hintStyle: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                           border: InputBorder.none,
                         ),
                       ),
@@ -270,89 +286,86 @@ class _AiPageState extends State<AiPage> {
   }
 
   Widget _buildChatBubble(AiChatMessage msg) {
-    if (msg.isUser) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 14, left: 40),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: AppTheme.primary,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(18),
-              bottomLeft: Radius.circular(18),
-              bottomRight: Radius.circular(4),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        mainAxisAlignment: msg.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!msg.isUser) ...[
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: msg.isError ? AppTheme.danger.withValues(alpha: 0.12) : AppTheme.primary.withValues(alpha: 0.12),
+              ),
+              child: Icon(
+                msg.isError ? Icons.error_outline_rounded : Icons.smart_toy_rounded,
+                color: msg.isError ? AppTheme.danger : AppTheme.primary,
+                size: 18,
+              ),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                msg.text,
-                style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                msg.time,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 9),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 14, right: 40),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: msg.isError ? const Color(0xFFFFF0F0) : Colors.white,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(18),
-              bottomLeft: Radius.circular(4),
-              bottomRight: Radius.circular(18),
-            ),
-            border: Border.all(
-              color: msg.isError ? AppTheme.danger.withValues(alpha: 0.3) : const Color(0xFFE4EDF7),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.navy.withValues(alpha: 0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                msg.text,
-                style: TextStyle(
-                  color: msg.isError ? AppTheme.danger : AppTheme.textPrimary,
-                  fontSize: 13,
-                  height: 1.4,
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: msg.isUser
+                    ? AppTheme.primary
+                    : msg.isError
+                        ? const Color(0xFFFFEBEE)
+                        : Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(msg.isUser ? 18 : 4),
+                  bottomRight: Radius.circular(msg.isUser ? 4 : 18),
                 ),
+                border: msg.isUser
+                    ? null
+                    : Border.all(
+                        color: msg.isError ? const Color(0xFFFFCDD2) : const Color(0xFFE4ECF6),
+                      ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.navy.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                msg.time,
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 9),
+              child: Column(
+                crossAxisAlignment: msg.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    msg.text,
+                    style: TextStyle(
+                      color: msg.isUser
+                          ? Colors.white
+                          : msg.isError
+                              ? const Color(0xFFC62828)
+                              : AppTheme.textPrimary,
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    msg.time,
+                    style: TextStyle(
+                      color: msg.isUser ? Colors.white70 : AppTheme.textSecondary,
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      );
-    }
+          if (msg.isUser) const SizedBox(width: 8),
+        ],
+      ),
+    );
   }
 }

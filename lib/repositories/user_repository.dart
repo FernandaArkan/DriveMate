@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
 import '../models/user_profile.dart';
 import '../services/api_service.dart';
+import '../services/security_service.dart';
 
 class AuthResult {
   const AuthResult({
@@ -40,44 +41,123 @@ class UserRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
+      debugPrint('[SESSION DEBUG] A: mulai initSession');
+
       final prefs = await SharedPreferences.getInstance();
+
       _isLoggedIn = prefs.getBool(_keyIsLoggedIn) ?? false;
       final savedEmail = prefs.getString(_keyUserEmail);
 
+      debugPrint(
+        '[SESSION DEBUG] B: SharedPreferences selesai '
+        '(loggedIn=$_isLoggedIn)',
+      );
+
       final db = await _dbHelper.database;
+
+      debugPrint('[SESSION DEBUG] C: database terbuka');
+
       final countResult = await db.query('user_profile');
 
-      // Jika database lokal benar-benar kosong, buat akun awal contoh
+      debugPrint(
+        '[SESSION DEBUG] D: query profil selesai '
+        '(jumlah=${countResult.length})',
+      );
+
+      // Pertahankan perilaku pemulihan akun contoh yang sudah ada.
       if (countResult.isEmpty) {
+        debugPrint('[SESSION DEBUG] E: memulihkan akun contoh');
+
         await restoreSampleAccount();
+
+        debugPrint('[SESSION DEBUG] F: pemulihan akun selesai');
       }
 
-      if (_isLoggedIn && savedEmail != null && savedEmail.isNotEmpty) {
+      if (_isLoggedIn &&
+          savedEmail != null &&
+          savedEmail.isNotEmpty) {
+        debugPrint('[SESSION DEBUG] G: mencari profil session');
+
         final matches = await db.query(
           'user_profile',
           where: 'LOWER(email) = ?',
           whereArgs: [savedEmail.trim().toLowerCase()],
           limit: 1,
         );
+
         if (matches.isNotEmpty) {
           _currentUser = UserProfile.fromMap(
             Map<String, dynamic>.from(matches.first),
           );
         }
+
+        debugPrint(
+          '[SESSION DEBUG] H: pencarian profil selesai '
+          '(ditemukan=${matches.isNotEmpty})',
+        );
       }
 
-      _currentUser ??= await _dbHelper.getUserProfile();
+      if (_currentUser == null) {
+        debugPrint('[SESSION DEBUG] I: mengambil profil lokal');
+
+        _currentUser = await _dbHelper.getUserProfile();
+
+        debugPrint(
+          '[SESSION DEBUG] J: pengambilan profil selesai '
+          '(adaProfil=${_currentUser != null})',
+        );
+      }
 
       if (_currentUser == null) {
         _isLoggedIn = false;
         await prefs.setBool(_keyIsLoggedIn, false);
+
+        debugPrint(
+          '[SESSION DEBUG] K: profil tidak ditemukan, '
+          'status login dinonaktifkan',
+        );
       }
-    } catch (e) {
-      debugPrint('Error initSession: $e');
+    } catch (e, stackTrace) {
+      debugPrint('[SESSION DEBUG] ERROR: $e');
+      debugPrint('[SESSION DEBUG] STACK TRACE:\n$stackTrace');
     } finally {
       _isLoading = false;
       notifyListeners();
+
+      debugPrint('[SESSION DEBUG] Z: initSession selesai');
     }
+  }
+
+  Future<bool> validateSession() async {
+    if (!_isLoggedIn || _currentUser == null) {
+      return false;
+    }
+
+    try {
+      final token = _currentUser?.token;
+
+      if (token != null && token.isNotEmpty) {
+        final apiResponse = await ApiService.instance.get(
+          '/api/vehicles.php?user_id=${_currentUser!.id}',
+          token: token,
+        );
+
+        if (apiResponse.statusCode == 401) {
+          debugPrint(
+            'Backend rejected session token (401). Logging out.',
+          );
+          await logout();
+          return false;
+        }
+      }
+    } catch (e) {
+      debugPrint(
+        'Session validation backend check ($e). '
+        'Maintaining offline session.',
+      );
+    }
+
+    return _isLoggedIn && _currentUser != null;
   }
 
   Future<bool> login(String identifier, String password) async {
@@ -88,7 +168,7 @@ class UserRepository extends ChangeNotifier {
       final cleanIdentifier = identifier.trim();
       final db = await _dbHelper.database;
 
-      // 1. Coba login ke Backend API jika online
+      // 1. Coba login ke Backend API jika online.
       try {
         final apiResponse = await ApiService.instance.post(
           '/api/login.php',
@@ -100,12 +180,19 @@ class UserRepository extends ChangeNotifier {
 
         if (apiResponse.isSuccess && apiResponse.data != null) {
           final resData = apiResponse.data!;
-          final userData = resData['data'] is Map ? resData['data'] as Map<String, dynamic> : null;
-          final token = resData['token']?.toString() ?? userData?['token']?.toString() ?? 'token_${DateTime.now().millisecondsSinceEpoch}';
+
+          final userData = resData['data'] is Map
+              ? resData['data'] as Map<String, dynamic>
+              : null;
+
+          final token = resData['token']?.toString() ??
+              userData?['token']?.toString() ??
+              'token_${DateTime.now().millisecondsSinceEpoch}';
 
           final userId = userData != null && userData['id'] != null
               ? int.tryParse(userData['id'].toString()) ?? 1
               : 1;
+
           final name = userData?['name']?.toString() ?? 'User';
           final email = userData?['email']?.toString() ?? cleanIdentifier;
           final phone = userData?['phone']?.toString() ?? '';
@@ -126,10 +213,15 @@ class UserRepository extends ChangeNotifier {
             limit: 1,
           );
 
-          if ((existing as List).isEmpty) {
+          if (existing.isEmpty) {
             await db.insert('user_profile', user.toMap());
           } else {
-            await db.update('user_profile', user.toMap(), where: 'id = ?', whereArgs: [user.id]);
+            await db.update(
+              'user_profile',
+              user.toMap(),
+              where: 'id = ?',
+              whereArgs: [user.id],
+            );
           }
 
           final prefs = await SharedPreferences.getInstance();
@@ -138,17 +230,22 @@ class UserRepository extends ChangeNotifier {
 
           _currentUser = user;
           _isLoggedIn = true;
+
           return true;
         } else if (apiResponse.statusCode == 401) {
           debugPrint('Login ditolak server: ${apiResponse.message}');
           return false;
         }
       } catch (netErr) {
-        debugPrint('Backend tidak dapat dijangkau ($netErr), beralih ke verifikasi lokal.');
+        debugPrint(
+          'Backend tidak dapat dijangkau ($netErr), '
+          'beralih ke verifikasi lokal.',
+        );
       }
 
-      // 2. Fallback verifikasi lokal SQLite
+      // 2. Fallback verifikasi lokal SQLite.
       final input = cleanIdentifier.toLowerCase();
+
       final matches = await db.query(
         'user_profile',
         where: 'LOWER(email) = ? OR phone = ?',
@@ -161,14 +258,19 @@ class UserRepository extends ChangeNotifier {
       }
 
       for (final map in matches) {
-        final user = UserProfile.fromMap(Map<String, dynamic>.from(map));
+        final user = UserProfile.fromMap(
+          Map<String, dynamic>.from(map),
+        );
+
         if (user.passwordHash == password) {
           final prefs = await SharedPreferences.getInstance();
+
           await prefs.setBool(_keyIsLoggedIn, true);
           await prefs.setString(_keyUserEmail, user.email);
 
           _currentUser = user;
           _isLoggedIn = true;
+
           return true;
         }
       }
@@ -200,7 +302,7 @@ class UserRepository extends ChangeNotifier {
 
       final db = await _dbHelper.database;
 
-      // 1. Validasi duplikasi lokal
+      // 1. Validasi duplikasi lokal.
       final existingEmail = await db.query(
         'user_profile',
         where: 'LOWER(email) = ?',
@@ -211,11 +313,12 @@ class UserRepository extends ChangeNotifier {
       if (existingEmail.isNotEmpty) {
         return const AuthResult(
           isSuccess: false,
-          message: 'Email sudah terdaftar. Silakan login atau gunakan email lain.',
+          message:
+              'Email sudah terdaftar. Silakan login atau gunakan email lain.',
         );
       }
 
-      // 2. Kirim request registrasi ke Backend API
+      // 2. Kirim request registrasi ke Backend API.
       final apiResponse = await ApiService.instance.post(
         '/api/register.php',
         body: {
@@ -226,21 +329,28 @@ class UserRepository extends ChangeNotifier {
         },
       );
 
-      // Jika server backend merespons berhasil
       if (apiResponse.isSuccess) {
         int newId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
         String? token;
 
         if (apiResponse.data != null && apiResponse.data is Map) {
           final resData = apiResponse.data as Map<String, dynamic>;
-          final userData = resData['data'] is Map ? resData['data'] as Map<String, dynamic> : null;
+
+          final userData = resData['data'] is Map
+              ? resData['data'] as Map<String, dynamic>
+              : null;
+
           if (userData != null && userData['id'] != null) {
-            newId = int.tryParse(userData['id'].toString()) ?? newId;
+            newId =
+                int.tryParse(userData['id'].toString()) ?? newId;
           }
-          token = resData['token']?.toString() ?? userData?['token']?.toString();
+
+          token = resData['token']?.toString() ??
+              userData?['token']?.toString();
         }
 
-        token ??= 'drivemate_jwt_${DateTime.now().millisecondsSinceEpoch}';
+        token ??=
+            'drivemate_jwt_${DateTime.now().millisecondsSinceEpoch}';
 
         final newUser = UserProfile(
           id: newId,
@@ -262,12 +372,14 @@ class UserRepository extends ChangeNotifier {
 
         return AuthResult(
           isSuccess: true,
-          message: 'Pendaftaran berhasil dikonfirmasi oleh server! Selamat datang di DriveMate.',
+          message:
+              'Pendaftaran berhasil dikonfirmasi oleh server! Selamat datang di DriveMate.',
           user: newUser,
         );
       } else {
-        // Server mengembalikan error atau koneksi gagal
-        final errMsg = apiResponse.message ?? 'Server backend menolak registrasi.';
+        final errMsg =
+            apiResponse.message ?? 'Server backend menolak registrasi.';
+
         return AuthResult(
           isSuccess: false,
           message: 'Registrasi ke server gagal: $errMsg',
@@ -275,6 +387,7 @@ class UserRepository extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error register: $e');
+
       return AuthResult(
         isSuccess: false,
         message: 'Terjadi kesalahan sistem saat registrasi: $e',
@@ -317,6 +430,7 @@ class UserRepository extends ChangeNotifier {
       }
 
       final prefs = await SharedPreferences.getInstance();
+
       await prefs.setBool(_keyIsLoggedIn, false);
       await prefs.setString(_keyUserEmail, andi.email);
 
@@ -334,8 +448,11 @@ class UserRepository extends ChangeNotifier {
   Future<void> logout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
       await prefs.setBool(_keyIsLoggedIn, false);
       _isLoggedIn = false;
+
+      SecurityService.instance.unlock();
     } catch (e) {
       debugPrint('Error logout: $e');
     } finally {

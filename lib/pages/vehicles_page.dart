@@ -59,6 +59,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
   }
 
   Future<void> _openForm({Vehicle? vehicle}) async {
+    final l10n = AppLocalizations.of(context);
     final result = await showDialog<Vehicle>(
       context: context,
       barrierDismissible: false,
@@ -89,9 +90,9 @@ class _VehiclesPageState extends State<VehiclesPage> {
           content: Text(
             success
                 ? (vehicle == null
-                    ? 'Kendaraan berhasil ditambahkan ke database.'
-                    : 'Data kendaraan berhasil diperbarui.')
-                : 'Gagal memproses data kendaraan.',
+                    ? l10n.vehicleAddedSuccess
+                    : l10n.vehicleUpdatedSuccess)
+                : l10n.vehicleProcessFailed,
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -99,30 +100,34 @@ class _VehiclesPageState extends State<VehiclesPage> {
   }
 
   Future<void> _deleteVehicle(Vehicle vehicle) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          title: const Text(
-            'Hapus Kendaraan',
-            style: TextStyle(fontWeight: FontWeight.w800),
+          title: Text(
+            l10n.deleteVehicleConfirmTitle,
+            style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           content: Text(
-            'Apakah Anda yakin ingin menghapus '
-            '${vehicle.brand} ${vehicle.name} (${vehicle.plate}) dari database?',
+            l10n.deleteVehicleConfirmContent(
+              vehicle.brand,
+              vehicle.name,
+              vehicle.plate,
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Batal'),
+              child: Text(l10n.cancel),
             ),
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.danger,
               ),
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Hapus'),
+              child: Text(l10n.delete),
             ),
           ],
         );
@@ -139,9 +144,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
       ..showSnackBar(
         SnackBar(
           content: Text(
-            success
-                ? 'Kendaraan berhasil dihapus.'
-                : 'Gagal menghapus kendaraan.',
+            success ? l10n.vehicleDeletedSuccess : l10n.vehicleDeleteFailed,
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -149,6 +152,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
   }
 
   void _showDetailModal(Vehicle vehicle) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -191,7 +195,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      vehicle.status,
+                      l10n.translateVehicleStatus(vehicle.status),
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -202,19 +206,19 @@ class _VehiclesPageState extends State<VehiclesPage> {
                 ],
               ),
               const SizedBox(height: 16),
-              _detailRow('Nomor Polisi', vehicle.plate),
-              _detailRow('Tahun Pembuatan', '${vehicle.year}'),
-              _detailRow('Total Jarak Tempuh', '${_formatMileage(vehicle.mileage)} km'),
-              _detailRow('Kapasitas Bahan Bakar', '${vehicle.fuelLevel}%'),
-              _detailRow('Servis Terakhir', vehicle.lastServiceDate ?? '10 Mar 2025'),
-              _detailRow('Jatuh Tempo Pajak', vehicle.taxDueDate ?? '12 Jul 2026'),
+              _detailRow(l10n.plateNumberLabel, vehicle.plate),
+              _detailRow(l10n.manufactureYearLabel, '${vehicle.year}'),
+              _detailRow(l10n.totalMileageLabel, '${_formatMileage(vehicle.mileage)} km'),
+              _detailRow(l10n.fuelCapacityLabel, '${vehicle.fuelLevel}%'),
+              _detailRow(l10n.lastServiceLabel, vehicle.lastServiceDate ?? '10 Mar 2025'),
+              _detailRow(l10n.taxDueDateLabel, vehicle.taxDueDate ?? '12 Jul 2026'),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
                   style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Tutup'),
+                  child: Text(l10n.close),
                 ),
               ),
             ],
@@ -251,7 +255,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Untuk ${vehicle.brand} ${vehicle.name} (${vehicle.plate})',
+                '${l10n.forVehiclePrefix} ${vehicle.brand} ${vehicle.name} (${vehicle.plate})',
                 style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
               ),
               const SizedBox(height: 18),
@@ -276,6 +280,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
   }
 
   void _showDocumentModal(Vehicle vehicle) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -289,27 +294,27 @@ class _VehiclesPageState extends State<VehiclesPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Dokumen Kendaraan',
-                style: TextStyle(
+              Text(
+                l10n.vehicleDocumentTitle,
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
                   color: AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 14),
-              _detailRow('Nomor Polisi (STNK)', vehicle.plate),
-              _detailRow('Masa Berlaku STNK 5 Thn', '12 Juli 2029'),
-              _detailRow('Pajak Tahunan', vehicle.taxDueDate ?? '12 Juli 2026'),
-              _detailRow('Status BPKB', 'Lengkap (Tersimpan Aman)'),
-              _detailRow('Asuransi Kendaraan', 'Comprehensive (All Risk)'),
+              _detailRow('${l10n.plateNumberLabel} (STNK)', vehicle.plate),
+              _detailRow(l10n.stnk5YearExpiryLabel, '12 Juli 2029'),
+              _detailRow(l10n.annualTaxLabel, vehicle.taxDueDate ?? '12 Juli 2026'),
+              _detailRow(l10n.bpkbStatusLabel, l10n.bpkbStatusVal),
+              _detailRow(l10n.insuranceLabel, l10n.insuranceVal),
               const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
                   style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Tutup'),
+                  child: Text(l10n.close),
                 ),
               ),
             ],
@@ -337,6 +342,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final active = _activeVehicle;
     final allVehicles = _filteredVehicles;
 
@@ -350,9 +356,9 @@ class _VehiclesPageState extends State<VehiclesPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Kendaraan',
-                  style: TextStyle(
+                Text(
+                  l10n.vehiclesTitle,
+                  style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
                     color: AppTheme.textPrimary,
@@ -361,7 +367,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
                 FilledButton.icon(
                   onPressed: () => _openForm(),
                   icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Tambah Kendaraan'),
+                  label: Text(l10n.addVehicleBtn),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppTheme.primary,
                     foregroundColor: Colors.white,
@@ -384,7 +390,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
             TextField(
               onChanged: (val) => setState(() => _searchQuery = val),
               decoration: InputDecoration(
-                hintText: 'Cari nama, merek, atau plat nomor...',
+                hintText: l10n.searchVehicleHint,
                 hintStyle: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.textSecondary, size: 20),
                 filled: true,
@@ -402,7 +408,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
             if (_repo.isLoading)
               const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
             else if (active == null)
-              _buildEmptyState()
+              _buildEmptyState(l10n)
             else ...[
               // KARTU KENDARAAN AKTIF (PERSIS MOCKUP LAYAR 4)
               Container(
@@ -453,7 +459,9 @@ class _VehiclesPageState extends State<VehiclesPage> {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
-                                  active.isPrimary ? 'Kendaraan Utama' : 'Kendaraan Tambahan',
+                                  active.isPrimary
+                                      ? l10n.primaryVehicleLabel
+                                      : l10n.secondaryVehicleLabel,
                                   style: const TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
@@ -486,11 +494,11 @@ class _VehiclesPageState extends State<VehiclesPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Jarak: ${_formatMileage(active.mileage)} km',
+                          '${l10n.distancePrefix}: ${_formatMileage(active.mileage)} km',
                           style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                         ),
                         Text(
-                          'Bahan Bakar: ${active.fuelLevel}%',
+                          '${l10n.fuelPrefix}: ${active.fuelLevel}%',
                           style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                         ),
                       ],
@@ -546,13 +554,13 @@ class _VehiclesPageState extends State<VehiclesPage> {
                   children: [
                     _buildMenuItem(
                       icon: Icons.article_outlined,
-                      title: 'Detail Kendaraan',
+                      title: l10n.vehicleDetailTitle,
                       onTap: () => _showDetailModal(active),
                     ),
                     const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                     _buildMenuItem(
                       icon: Icons.history_rounded,
-                      title: 'Riwayat Servis',
+                      title: l10n.serviceHistory,
                       onTap: () {
                         Navigator.push(
                           context,
@@ -567,25 +575,25 @@ class _VehiclesPageState extends State<VehiclesPage> {
                     const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                     _buildMenuItem(
                       icon: Icons.payments_outlined,
-                      title: 'Biaya Perawatan',
+                      title: l10n.costEstimation,
                       onTap: () => _showCostModal(active),
                     ),
                     const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                     _buildMenuItem(
                       icon: Icons.description_outlined,
-                      title: 'Dokumen Kendaraan',
+                      title: l10n.vehicleDocumentTitle,
                       onTap: () => _showDocumentModal(active),
                     ),
                     const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                     _buildMenuItem(
                       icon: Icons.edit_outlined,
-                      title: 'Edit Data',
+                      title: l10n.editVehicle,
                       onTap: () => _openForm(vehicle: active),
                     ),
                     const Divider(height: 1, indent: 56, color: Color(0xFFF0F4FA)),
                     _buildMenuItem(
                       icon: Icons.delete_outline_rounded,
-                      title: 'Hapus Kendaraan',
+                      title: l10n.deleteVehicle,
                       color: AppTheme.danger,
                       onTap: () => _deleteVehicle(active),
                     ),
@@ -635,7 +643,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(AppLocalizations l10n) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -651,21 +659,21 @@ class _VehiclesPageState extends State<VehiclesPage> {
               child: const Icon(Icons.directions_car_outlined, size: 40, color: AppTheme.primary),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Belum ada kendaraan',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
+            Text(
+              l10n.noVehicleHeader,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Tambahkan kendaraan Anda untuk mulai memantau dan mencatat servis.',
+            Text(
+              l10n.noVehicleSub,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: () => _openForm(),
               icon: const Icon(Icons.add),
-              label: const Text('Tambah Kendaraan'),
+              label: Text(l10n.addVehicleBtn),
               style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
             ),
           ],

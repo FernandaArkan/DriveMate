@@ -1,12 +1,65 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../localization/app_localizations.dart';
+import '../repositories/user_repository.dart';
+import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 
-class SplashPage extends StatelessWidget {
+class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
 
   @override
+  State<SplashPage> createState() => _SplashPageState();
+}
+
+class _SplashPageState extends State<SplashPage> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialSession();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkInitialSession() async {
+    // Small delay so branding displays smoothly
+    await Future.delayed(const Duration(milliseconds: 1000));
+    if (!mounted) return;
+
+    final userRepo = UserRepository.instance;
+    if (userRepo.isLoggedIn) {
+      final isValid = await userRepo.validateSession();
+      if (!mounted) return;
+
+      if (isValid) {
+        if (SecurityService.instance.isSecurityActive) {
+          SecurityService.instance.lockApp();
+        }
+        Navigator.pushReplacementNamed(context, '/home');
+        return;
+      } else {
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+    }
+  }
+
+  void _onGetStartedPressed() {
+    _timer?.cancel();
+    Navigator.pushReplacementNamed(context, '/login');
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -47,8 +100,7 @@ class SplashPage extends StatelessWidget {
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.transparent,
-                        const Color(0xFF020915)
-                            .withValues(alpha: 0.8),
+                        const Color(0xFF020915).withValues(alpha: 0.8),
                       ],
                     ),
                   ),
@@ -111,10 +163,10 @@ class SplashPage extends StatelessWidget {
                       size: 100,
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Asisten pribadi untuk\nkendaraan Anda',
+                    Text(
+                      l10n.splashTagline,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 15,
                         height: 1.6,
@@ -125,12 +177,7 @@ class SplashPage extends StatelessWidget {
                       width: double.infinity,
                       height: 54,
                       child: FilledButton(
-                        onPressed: () {
-                          Navigator.pushReplacementNamed(
-                            context,
-                            '/login',
-                          );
-                        },
+                        onPressed: _onGetStartedPressed,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppTheme.primary,
                           foregroundColor: Colors.white,
@@ -138,9 +185,9 @@ class SplashPage extends StatelessWidget {
                             borderRadius: BorderRadius.circular(18),
                           ),
                         ),
-                        child: const Text(
-                          'Get Started',
-                          style: TextStyle(
+                        child: Text(
+                          l10n.getStartedBtn,
+                          style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w800,
                           ),

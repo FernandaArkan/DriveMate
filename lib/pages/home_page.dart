@@ -331,7 +331,7 @@ class _HomePageState extends State<HomePage> {
 
             // AKSES CEPAT (Mockup Layar 3)
             SectionHeader(
-              title: l10n.isEnglish ? 'Quick Actions' : 'Akses Cepat',
+              title: l10n.quickActions,
             ),
             const SizedBox(height: 14),
 
@@ -449,18 +449,25 @@ class _HomePageState extends State<HomePage> {
                   remColor = const Color(0xFFFFA53D);
                 }
 
+                final translatedTitle = l10n.translateReminderTitle(reminder.title);
+                final translatedDesc = l10n.translateReminderMessage(
+                  reminder.message,
+                  category: reminder.category,
+                );
+                final detailText = reminder.targetDate != null
+                    ? '${l10n.dueLabel}: ${TimeZoneService.instance.formatFlexibleString(reminder.targetDate!)}'
+                    : (reminder.targetMileage != null
+                        ? '${l10n.targetLabel}: ${_formatMileage(reminder.targetMileage!)} km'
+                        : l10n.translateTimeAgo(reminder.timeAgo));
+
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _ReminderCard(
                     icon: remIcon,
                     color: remColor,
-                    title: reminder.title,
-                    description: reminder.message,
-                    detail: reminder.targetDate != null
-                        ? '${l10n.dueLabel}: ${TimeZoneService.instance.formatFlexibleString(reminder.targetDate!)}'
-                        : (reminder.targetMileage != null
-                            ? '${l10n.targetLabel}: ${_formatMileage(reminder.targetMileage!)} km'
-                            : reminder.timeAgo),
+                    title: translatedTitle,
+                    description: translatedDesc,
+                    detail: detailText,
                     onTap: () {
                       Navigator.push(
                         context,
@@ -593,7 +600,9 @@ class _HomePageState extends State<HomePage> {
     final plate = vehicle.plate;
     final mileageStr = '${_formatMileage(vehicle.mileage)} km';
     final fuelStr = '${vehicle.fuelLevel}%';
-    final statusStr = vehicle.status.isNotEmpty ? vehicle.status : l10n.inGoodCondition;
+    final statusStr = vehicle.status.isNotEmpty
+        ? l10n.translateVehicleStatus(vehicle.status)
+        : l10n.inGoodCondition;
 
     return Container(
       padding: const EdgeInsets.all(18),

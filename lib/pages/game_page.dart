@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../localization/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class GamePage extends StatefulWidget {
@@ -98,17 +99,21 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
       // 3. Deteksi Tabrakan (AABB Collision)
       // Pemain di X = 60..110, Y = _playerY
       // Obstacle di X = _obstacleX.._obstacleX + 35, Y = 0..35
-      final playerXStart = 60.0;
-      final playerXEnd = 110.0;
-      final obstacleXEnd = _obstacleX + _obstacleWidth;
+      const playerLeft = 60.0;
+      const playerRight = 115.0;
+      final playerBottom = _playerY;
+      final obstacleLeft = _obstacleX;
+      final obstacleRight = _obstacleX + _obstacleWidth;
+      const obstacleTop = 35.0;
 
-      final isOverlapX = _obstacleX < playerXEnd && obstacleXEnd > playerXStart;
-      final isOverlapY = _playerY < _obstacleHeight;
+      final isCollidingX = playerRight > obstacleLeft + 6 && playerLeft < obstacleRight - 6;
+      final isCollidingY = playerBottom < obstacleTop;
 
-      if (isOverlapX && isOverlapY) {
-        // Tabrakan!
+      if (isCollidingX && isCollidingY) {
+        // Tabrakan terjadi!
         _lives--;
-        _obstacleX = 400.0; // Reset rintangan ke belakang
+        _obstacleX = 450.0 + Random().nextDouble() * 80.0; // Reset posisi obstacle
+
         if (_lives <= 0) {
           _isGameOver = true;
           _isPlaying = false;
@@ -120,14 +125,16 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFF63B4F6),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          'Vehicle Runner',
-          style: TextStyle(
+        title: Text(
+          l10n.miniGameTitle,
+          style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w900,
             fontSize: 20,
@@ -159,7 +166,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                       ),
                       child: Column(
                         children: [
-                          const Text('Score', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                          Text(l10n.gameScoreLabel, style: const TextStyle(color: Colors.white70, fontSize: 10)),
                           Text(
                             '$_score',
                             style: const TextStyle(
@@ -196,7 +203,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                       ),
                       child: Column(
                         children: [
-                          const Text('Level', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                          Text(l10n.gameLevelLabel, style: const TextStyle(color: Colors.white70, fontSize: 10)),
                           Text(
                             '$_level',
                             style: const TextStyle(
@@ -223,7 +230,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                       ),
                     ),
 
-                    // Mobil Pemain (Merah)
+                    // Mobil Pemain (Player)
                     Positioned(
                       left: 60,
                       bottom: 110 + _playerY,
@@ -306,12 +313,12 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                               alignment: Alignment.center,
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
-                                  Icon(Icons.touch_app_rounded, color: Colors.white, size: 20),
-                                  SizedBox(width: 8),
+                                children: [
+                                  const Icon(Icons.touch_app_rounded, color: Colors.white, size: 20),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    'Tap untuk melompat',
-                                    style: TextStyle(
+                                    l10n.gameTapToJump,
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w800,
                                       fontSize: 14,
@@ -342,9 +349,9 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                             children: [
                               const Icon(Icons.sentiment_dissatisfied_rounded, size: 54, color: AppTheme.danger),
                               const SizedBox(height: 12),
-                              const Text(
-                                'Game Over!',
-                                style: TextStyle(
+                              Text(
+                                l10n.gameOverTitle,
+                                style: const TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.w900,
                                   color: AppTheme.textPrimary,
@@ -352,7 +359,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Skor Akhir: $_score poin',
+                                l10n.gameFinalScore(_score),
                                 style: const TextStyle(fontSize: 15, color: AppTheme.textSecondary),
                               ),
                               const SizedBox(height: 20),
@@ -364,7 +371,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                                 ),
                                 onPressed: _startGame,
                                 icon: const Icon(Icons.replay_rounded),
-                                label: const Text('Main Lagi'),
+                                label: Text(l10n.playAgainBtn),
                               ),
                             ],
                           ),

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
+import '../localization/app_localizations.dart';
 import '../models/reminder_item.dart';
 import '../models/vehicle.dart';
 import '../repositories/vehicle_repository.dart';
+import '../services/language_service.dart';
 import '../services/notification_service.dart';
 import '../services/timezone_service.dart';
 import '../theme/app_theme.dart';
@@ -327,8 +329,11 @@ class _NotificationsPageState extends State<NotificationsPage>
       builder: (dialogCtx) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final dateStr =
-                DateFormat('dd MMMM yyyy', 'id_ID').format(selectedDate);
+            final l10n = AppLocalizations.of(context);
+            final dateStr = DateFormat(
+              'dd MMMM yyyy',
+              LanguageService.instance.isEnglish ? 'en_US' : 'id_ID',
+            ).format(selectedDate);
             final timeStr =
                 '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')} ${TimeZoneService.instance.currentAbbreviation}';
 
@@ -349,8 +354,8 @@ class _NotificationsPageState extends State<NotificationsPage>
                   Expanded(
                     child: Text(
                       isEditing
-                          ? 'Ubah Pengingat Servis'
-                          : 'Atur Pengingat Servis',
+                          ? l10n.editReminderTitle
+                          : l10n.scheduleReminderTitle,
                       style: const TextStyle(
                           fontSize: 17, fontWeight: FontWeight.w800),
                       overflow: TextOverflow.ellipsis,
@@ -849,6 +854,7 @@ class _NotificationsPageState extends State<NotificationsPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -926,7 +932,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(filter),
+                      label: Text(l10n.translateCategory(filter)),
                       selected: isSelected,
                       onSelected: (val) {
                         setState(() => _selectedFilter = filter);
@@ -1139,6 +1145,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   }
 
   Widget _buildNotificationCard(ReminderItem item) {
+    final l10n = AppLocalizations.of(context);
     Color iconColor;
     Color iconBg;
     IconData iconData;
@@ -1209,7 +1216,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                       children: [
                         Expanded(
                           child: Text(
-                            item.title,
+                            l10n.translateReminderTitle(item.title),
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 14,
@@ -1225,7 +1232,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            effectiveCategory,
+                            l10n.translateCategory(effectiveCategory),
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
@@ -1237,7 +1244,10 @@ class _NotificationsPageState extends State<NotificationsPage>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      item.message,
+                      l10n.translateReminderMessage(
+                        item.message,
+                        category: effectiveCategory,
+                      ),
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppTheme.textSecondary,
@@ -1271,7 +1281,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                 ),
               ] else ...[
                 Text(
-                  item.timeAgo,
+                  l10n.translateTimeAgo(item.timeAgo),
                   style: const TextStyle(
                       fontSize: 11, color: AppTheme.textSecondary),
                 ),

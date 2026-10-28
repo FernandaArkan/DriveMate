@@ -211,7 +211,7 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                act.title,
+                                l10n.translateActivityTitle(act.title),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 13,

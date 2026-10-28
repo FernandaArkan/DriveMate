@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../localization/app_localizations.dart';
 import '../models/vehicle.dart';
 import '../theme/app_theme.dart';
 
@@ -63,16 +64,16 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
     super.dispose();
   }
 
-  String? _requiredValidator(String? value, String label) {
+  String? _requiredValidator(String? value, String label, AppLocalizations l10n) {
     if (value == null || value.trim().isEmpty) {
-      return '$label wajib diisi.';
+      return l10n.formRequiredError(label);
     }
 
     return null;
   }
 
-  String? _yearValidator(String? value) {
-    final requiredError = _requiredValidator(value, 'Tahun kendaraan');
+  String? _yearValidator(String? value, AppLocalizations l10n) {
+    final requiredError = _requiredValidator(value, l10n.formVehicleYear, l10n);
 
     if (requiredError != null) return requiredError;
 
@@ -81,27 +82,41 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
     if (year == null ||
         year < 1886 ||
         year > DateTime.now().year + 1) {
-      return 'Masukkan tahun kendaraan yang valid.';
+      return l10n.formYearError;
     }
 
     return null;
   }
 
-  String? _mileageValidator(String? value) {
-    final requiredError = _requiredValidator(value, 'Jarak tempuh');
+  String? _mileageValidator(String? value, AppLocalizations l10n) {
+    final requiredError = _requiredValidator(value, l10n.formVehicleMileage, l10n);
 
     if (requiredError != null) return requiredError;
 
     final mileage = int.tryParse(value!.trim());
 
     if (mileage == null || mileage < 0) {
-      return 'Jarak tempuh harus berupa angka minimal 0.';
+      return l10n.formMileageError;
     }
 
     return null;
   }
 
-  void _saveVehicle() {
+  String? _fuelValidator(String? value, AppLocalizations l10n) {
+    final requiredError = _requiredValidator(value, l10n.formVehicleFuel, l10n);
+
+    if (requiredError != null) return requiredError;
+
+    final fuel = int.tryParse(value!.trim());
+
+    if (fuel == null || fuel < 0 || fuel > 100) {
+      return l10n.formFuelError;
+    }
+
+    return null;
+  }
+
+  void _submit() {
     if (!_formKey.currentState!.validate()) return;
 
     final fuel = int.tryParse(_fuelController.text.trim()) ?? 65;
@@ -114,162 +129,209 @@ class _VehicleFormDialogState extends State<VehicleFormDialog> {
       plate: _plateController.text.trim().toUpperCase(),
       mileage: int.parse(_mileageController.text.trim()),
       fuelLevel: fuel.clamp(0, 100),
-      status: widget.vehicle?.status ?? 'Dalam kondisi baik',
+      status: widget.vehicle?.status ?? 'Aktif',
       isPrimary: widget.vehicle?.isPrimary ?? false,
-      lastServiceDate: widget.vehicle?.lastServiceDate ?? 'Belum ada data',
-      taxDueDate: widget.vehicle?.taxDueDate ?? '12 Jul 2026',
+      lastServiceDate: widget.vehicle?.lastServiceDate,
+      taxDueDate: widget.vehicle?.taxDueDate,
+      createdAt: widget.vehicle?.createdAt,
+      isSynced: widget.vehicle?.isSynced ?? 1,
     );
 
-    Navigator.of(context).pop(vehicle);
+    Navigator.pop(context, vehicle);
+  }
+
+  InputDecoration _inputDecoration(String label, {String? hint}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      floatingLabelBehavior: FloatingLabelBehavior.always,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE2E9F3)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE2E9F3)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      filled: true,
+      fillColor: Colors.white,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isEditing = widget.vehicle != null;
 
-    return AlertDialog(
-      backgroundColor: AppTheme.surface,
-      title: Text(
-        isEditing ? 'Edit Kendaraan' : 'Tambah Kendaraan',
-        style: const TextStyle(
-          color: AppTheme.textPrimary,
-          fontSize: 19,
-          fontWeight: FontWeight.w800,
-        ),
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
       ),
-      content: SizedBox(
-        width: 360,
-        child: SingleChildScrollView(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 16),
           child: Form(
             key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTextField(
-                  controller: _nameController,
-                  label: 'Nama kendaraan',
-                  hint: 'Contoh: Civic',
-                  icon: Icons.directions_car_outlined,
-                  validator: (value) =>
-                      _requiredValidator(value, 'Nama kendaraan'),
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _brandController,
-                  label: 'Merek kendaraan',
-                  hint: 'Contoh: Honda',
-                  icon: Icons.business_outlined,
-                  validator: (value) =>
-                      _requiredValidator(value, 'Merek kendaraan'),
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _yearController,
-                  label: 'Tahun kendaraan',
-                  hint: 'Contoh: 2022',
-                  icon: Icons.calendar_today_outlined,
-                  numberOnly: true,
-                  validator: _yearValidator,
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _plateController,
-                  label: 'Nomor polisi',
-                  hint: 'Contoh: B 1234 KZ',
-                  icon: Icons.pin_outlined,
-                  validator: (value) =>
-                      _requiredValidator(value, 'Nomor polisi'),
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _mileageController,
-                  label: 'Jarak tempuh (km)',
-                  hint: 'Contoh: 12450',
-                  icon: Icons.speed_outlined,
-                  numberOnly: true,
-                  validator: _mileageValidator,
-                ),
-                const SizedBox(height: 14),
-                _buildTextField(
-                  controller: _fuelController,
-                  label: 'Perkiraan Bahan Bakar (%)',
-                  hint: 'Contoh: 65',
-                  icon: Icons.local_gas_station_outlined,
-                  numberOnly: true,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) return null;
-                    final val = int.tryParse(value.trim());
-                    if (val == null || val < 0 || val > 100) {
-                      return 'Nilai harus antara 0 - 100%';
-                    }
-                    return null;
-                  },
-                ),
-              ],
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          isEditing
+                              ? Icons.edit_rounded
+                              : Icons.add_circle_outline_rounded,
+                          color: AppTheme.primary,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          isEditing
+                              ? l10n.dialogEditVehicleTitle
+                              : l10n.dialogAddVehicleTitle,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: _inputDecoration(
+                      l10n.formVehicleName,
+                      hint: 'Civic RS',
+                    ),
+                    validator: (v) => _requiredValidator(v, l10n.formVehicleName, l10n),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _brandController,
+                    decoration: _inputDecoration(
+                      l10n.formVehicleBrand,
+                      hint: 'Honda',
+                    ),
+                    validator: (v) => _requiredValidator(v, l10n.formVehicleBrand, l10n),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _yearController,
+                          decoration: _inputDecoration(
+                            l10n.formVehicleYear,
+                            hint: '2024',
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (v) => _yearValidator(v, l10n),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _plateController,
+                          decoration: _inputDecoration(
+                            l10n.formVehiclePlate,
+                            hint: 'B 1234 ABC',
+                          ),
+                          validator: (v) => _requiredValidator(v, l10n.formVehiclePlate, l10n),
+                          textCapitalization: TextCapitalization.characters,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _mileageController,
+                          decoration: _inputDecoration(
+                            l10n.formVehicleMileage,
+                            hint: '12500',
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (v) => _mileageValidator(v, l10n),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _fuelController,
+                          decoration: _inputDecoration(
+                            l10n.formVehicleFuel,
+                            hint: '65',
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (v) => _fuelValidator(v, l10n),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text(
+                          l10n.cancel,
+                          style: const TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 22,
+                            vertical: 12,
+                          ),
+                        ),
+                        onPressed: _submit,
+                        child: Text(
+                          isEditing ? l10n.save : l10n.save,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
-      actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text(
-            'Batal',
-            style: TextStyle(color: AppTheme.textSecondary),
-          ),
-        ),
-        FilledButton.icon(
-          onPressed: _saveVehicle,
-          icon: const Icon(Icons.save_outlined, size: 18),
-          label: const Text('Simpan'),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppTheme.primary,
-            foregroundColor: Colors.white,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    required String? Function(String?) validator,
-    bool numberOnly = false,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: numberOnly
-          ? TextInputType.number
-          : TextInputType.text,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(icon, size: 20),
-        filled: true,
-        fillColor: AppTheme.background,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(
-            color: AppTheme.textSecondary.withValues(alpha: 0.15),
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: AppTheme.primary,
-            width: 1.4,
-          ),
-        ),
-      ),
-      validator: validator,
     );
   }
 }

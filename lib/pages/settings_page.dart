@@ -6,6 +6,7 @@ import '../api_config.dart';
 import '../localization/app_localizations.dart';
 import '../services/currency_service.dart';
 import '../services/language_service.dart';
+import '../services/security_service.dart';
 import '../services/sync_service.dart';
 import '../services/timezone_service.dart';
 import '../theme/app_theme.dart';
@@ -22,6 +23,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final LanguageService _languageService = LanguageService.instance;
   final CurrencyService _currencyService = CurrencyService.instance;
   final TimeZoneService _timezoneService = TimeZoneService.instance;
+  final SecurityService _securityService = SecurityService.instance;
 
   bool _isLoading = true;
 
@@ -50,6 +52,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _languageService.addListener(_onLanguageUpdated);
     _currencyService.addListener(_onCurrencyUpdated);
     _timezoneService.addListener(_onTimeZoneUpdated);
+    _securityService.addListener(_onSecurityUpdated);
   }
 
   @override
@@ -58,7 +61,12 @@ class _SettingsPageState extends State<SettingsPage> {
     _languageService.removeListener(_onLanguageUpdated);
     _currencyService.removeListener(_onCurrencyUpdated);
     _timezoneService.removeListener(_onTimeZoneUpdated);
+    _securityService.removeListener(_onSecurityUpdated);
     super.dispose();
+  }
+
+  void _onSecurityUpdated() {
+    if (mounted) setState(() {});
   }
 
   void _onSyncUpdated() {
@@ -206,6 +214,303 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       );
     }
+  }
+
+  Future<void> _showSetPinDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? errorText;
+
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (sbCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                l10n.createPinDialogTitle,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: pinController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: l10n.enterPinToUnlock,
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: l10n.confirmPinDialogTitle,
+                      counterText: '',
+                    ),
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorText!,
+                      style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx),
+                  child: Text(l10n.cancel),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+                  onPressed: () async {
+                    final pin = pinController.text.trim();
+                    final confirm = confirmController.text.trim();
+                    if (pin.length < 6) {
+                      setDialogState(() {
+                        errorText = l10n.pinMustBe6Digits;
+                      });
+                      return;
+                    }
+                    if (pin != confirm) {
+                      setDialogState(() {
+                        errorText = l10n.pinMismatch;
+                      });
+                      return;
+                    }
+                    final ok = await _securityService.setPin(pin);
+                    if (dialogCtx.mounted) {
+                      Navigator.pop(dialogCtx);
+                    }
+                    if (ok && mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.pinCreatedSuccess),
+                          backgroundColor: AppTheme.success,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(l10n.save),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showChangePinDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final oldPinController = TextEditingController();
+    final newPinController = TextEditingController();
+    final confirmNewController = TextEditingController();
+    String? errorText;
+
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (sbCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                l10n.pinChangeButton,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: oldPinController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: l10n.enterCurrentPinTitle,
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: newPinController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: l10n.enterNewPinTitle,
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmNewController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: l10n.confirmPinDialogTitle,
+                      counterText: '',
+                    ),
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorText!,
+                      style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx),
+                  child: Text(l10n.cancel),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+                  onPressed: () async {
+                    final oldPin = oldPinController.text.trim();
+                    final newPin = newPinController.text.trim();
+                    final confirm = confirmNewController.text.trim();
+                    if (newPin.length < 6) {
+                      setDialogState(() {
+                        errorText = l10n.pinMustBe6Digits;
+                      });
+                      return;
+                    }
+                    if (newPin != confirm) {
+                      setDialogState(() {
+                        errorText = l10n.pinMismatch;
+                      });
+                      return;
+                    }
+                    final ok = await _securityService.changePin(
+                      oldPin: oldPin,
+                      newPin: newPin,
+                    );
+                    if (!ok) {
+                      setDialogState(() {
+                        errorText = l10n.pinIncorrect;
+                      });
+                      return;
+                    }
+                    if (dialogCtx.mounted) {
+                      Navigator.pop(dialogCtx);
+                    }
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.pinChangedSuccess),
+                          backgroundColor: AppTheme.success,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(l10n.save),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showDisablePinDialog() async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final pinController = TextEditingController();
+    String? errorText;
+
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (sbCtx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                l10n.pinDisableButton,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: pinController,
+                    keyboardType: TextInputType.number,
+                    obscureText: true,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: l10n.enterCurrentPinTitle,
+                      counterText: '',
+                    ),
+                  ),
+                  if (errorText != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorText!,
+                      style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx),
+                  child: Text(l10n.cancel),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+                  onPressed: () async {
+                    final pin = pinController.text.trim();
+                    final ok = await _securityService.disablePin(pin);
+                    if (!ok) {
+                      setDialogState(() {
+                        errorText = l10n.pinIncorrect;
+                      });
+                      return;
+                    }
+                    if (dialogCtx.mounted) {
+                      Navigator.pop(dialogCtx);
+                    }
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.pinDisabledSuccess),
+                          backgroundColor: AppTheme.warning,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(l10n.pinDisableButton),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -570,7 +875,182 @@ class _SettingsPageState extends State<SettingsPage> {
 
                   const SizedBox(height: 22),
 
-                  // SECTION 3: SINKRONISASI SERVER & KONEKSI
+                  // SECTION 3: KEAMANAN & AUTENTIKASI
+                  _buildSectionTitle(l10n.sectionSecurity),
+                  Material(
+                    color: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: const BorderSide(
+                        color: Color(0xFFE5EDF7),
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      children: [
+                        // Biometrik
+                        SwitchListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 2,
+                          ),
+                          secondary: const Icon(
+                            Icons.fingerprint_rounded,
+                            color: AppTheme.primary,
+                          ),
+                          title: Text(
+                            l10n.biometricLockTitle,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: Text(
+                            l10n.biometricLockSub,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                          value: _securityService.isBiometricEnabled,
+                          activeThumbColor: AppTheme.primary,
+                          onChanged: (val) async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            if (val) {
+                              final available = await _securityService.isBiometricHardwareAvailable();
+                              final enrolled = await _securityService.isBiometricEnrolled();
+                              if (!available || !enrolled) {
+                                if (!mounted) return;
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text(l10n.biometricNotEnrolledMsg),
+                                    behavior: SnackBarBehavior.floating,
+                                    backgroundColor: AppTheme.warning,
+                                  ),
+                                );
+                                return;
+                              }
+                              final success = await _securityService.setBiometricEnabled(true);
+                              if (!success && mounted) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text(l10n.biometricAuthFailedMsg),
+                                    behavior: SnackBarBehavior.floating,
+                                    backgroundColor: AppTheme.danger,
+                                  ),
+                                );
+                              }
+                            } else {
+                              await _securityService.setBiometricEnabled(false);
+                            }
+                          },
+                        ),
+                        const Divider(
+                          height: 1,
+                          indent: 18,
+                          endIndent: 18,
+                          color: Color(0xFFF0F4FA),
+                        ),
+                        // PIN Section
+                        if (!_securityService.isPinSet)
+                          ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 4,
+                            ),
+                            leading: const Icon(
+                              Icons.pin_rounded,
+                              color: AppTheme.primary,
+                            ),
+                            title: Text(
+                              l10n.pinLockTitle,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            subtitle: Text(
+                              l10n.pinLockSub,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                            trailing: FilledButton.tonal(
+                              onPressed: _showSetPinDialog,
+                              child: Text(
+                                l10n.pinSetButton,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          )
+                        else ...[
+                          SwitchListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 2,
+                            ),
+                            secondary: const Icon(
+                              Icons.pin_rounded,
+                              color: AppTheme.primary,
+                            ),
+                            title: Text(
+                              l10n.pinLockTitle,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            subtitle: Text(
+                              l10n.pinLockSub,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                            value: _securityService.isPinEnabled,
+                            activeThumbColor: AppTheme.primary,
+                            onChanged: (val) {
+                              _securityService.togglePinEnabled(val);
+                            },
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _showChangePinDialog,
+                                    icon: const Icon(Icons.edit_rounded, size: 14),
+                                    label: Text(l10n.pinChangeButton, style: const TextStyle(fontSize: 11)),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _showDisablePinDialog,
+                                    icon: const Icon(Icons.delete_outline_rounded, size: 14),
+                                    label: Text(l10n.pinDisableButton, style: const TextStyle(fontSize: 11)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppTheme.danger,
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  // SECTION 4: SINKRONISASI SERVER & KONEKSI
                   _buildSectionTitle(l10n.sectionSync),
                   Material(
                     color: Colors.white,

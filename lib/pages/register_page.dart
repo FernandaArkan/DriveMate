@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../localization/app_localizations.dart';
 import '../repositories/user_repository.dart';
 import '../theme/app_theme.dart';
 
@@ -58,7 +60,9 @@ class _RegisterPageState extends State<RegisterPage> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result.message ?? 'Pendaftaran gagal. Silakan coba kembali.'),
+          content: Text(
+            result.message ?? 'Pendaftaran gagal. Silakan coba kembali.',
+          ),
           backgroundColor: AppTheme.danger,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 4),
@@ -115,6 +119,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -147,18 +153,18 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  const Text(
-                    'Daftar Akun Baru',
-                    style: TextStyle(
+                  Text(
+                    l10n.registerHeading,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 26,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Kelola semua kendaraan Anda dengan mudah',
-                    style: TextStyle(
+                  Text(
+                    l10n.registerSubheading,
+                    style: const TextStyle(
                       color: Color(0xFFD5E4F5),
                       fontSize: 13,
                     ),
@@ -170,12 +176,20 @@ class _RegisterPageState extends State<RegisterPage> {
                     controller: _nameController,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _inputDecoration(
-                      hint: 'Nama Lengkap',
+                      hint: l10n.fullName,
                       icon: Icons.person_outline_rounded,
                     ),
                     validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Nama lengkap wajib diisi';
-                      if (v.trim().length < 3) return 'Nama lengkap minimal 3 karakter';
+                      if (v == null || v.trim().isEmpty) {
+                        return l10n.isEnglish
+                            ? 'Full name is required'
+                            : 'Nama lengkap wajib diisi';
+                      }
+                      if (v.trim().length < 3) {
+                        return l10n.isEnglish
+                            ? 'Full name must be at least 3 characters'
+                            : 'Nama lengkap minimal 3 karakter';
+                      }
                       return null;
                     },
                   ),
@@ -187,13 +201,25 @@ class _RegisterPageState extends State<RegisterPage> {
                     keyboardType: TextInputType.emailAddress,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _inputDecoration(
-                      hint: 'Email Aktif (contoh: user@email.com)',
+                      hint: l10n.isEnglish
+                          ? 'Active Email (e.g. user@email.com)'
+                          : 'Email Aktif (contoh: user@email.com)',
                       icon: Icons.mail_outline_rounded,
                     ),
                     validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Email wajib diisi';
-                      final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-                      if (!emailRegex.hasMatch(v.trim())) return 'Format email tidak valid (contoh: nama@domain.com)';
+                      if (v == null || v.trim().isEmpty) {
+                        return l10n.isEnglish
+                            ? 'Email is required'
+                            : 'Email wajib diisi';
+                      }
+                      final emailRegex = RegExp(
+                        r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+                      );
+                      if (!emailRegex.hasMatch(v.trim())) {
+                        return l10n.isEnglish
+                            ? 'Invalid email format (e.g. name@domain.com)'
+                            : 'Format email tidak valid (contoh: nama@domain.com)';
+                      }
                       return null;
                     },
                   ),
@@ -205,14 +231,21 @@ class _RegisterPageState extends State<RegisterPage> {
                     keyboardType: TextInputType.phone,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _inputDecoration(
-                      hint: 'Nomor HP (WhatsApp, contoh: 081234567890)',
+                      hint: l10n.phoneHint,
                       icon: Icons.phone_outlined,
                     ),
                     validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Nomor HP wajib diisi';
-                      final digitsOnly = v.trim().replaceAll(RegExp(r'\D'), '');
+                      if (v == null || v.trim().isEmpty) {
+                        return l10n.isEnglish
+                            ? 'Phone number is required'
+                            : 'Nomor HP wajib diisi';
+                      }
+                      final digitsOnly =
+                          v.trim().replaceAll(RegExp(r'\D'), '');
                       if (digitsOnly.length < 10 || digitsOnly.length > 15) {
-                        return 'Nomor HP harus berupa 10-15 digit angka';
+                        return l10n.isEnglish
+                            ? 'Phone number must be 10-15 digits'
+                            : 'Nomor HP harus berupa 10-15 digit angka';
                       }
                       return null;
                     },
@@ -225,20 +258,33 @@ class _RegisterPageState extends State<RegisterPage> {
                     obscureText: _obscurePassword,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _inputDecoration(
-                      hint: 'Password (min. 6 karakter)',
+                      hint: l10n.isEnglish
+                          ? 'Password (min. 6 characters)'
+                          : 'Password (min. 6 karakter)',
                       icon: Icons.lock_outline_rounded,
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
                           color: const Color(0xFFB6CBE2),
                           size: 20,
                         ),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
                       ),
                     ),
                     validator: (v) {
-                      if (v == null || v.isEmpty) return 'Password wajib diisi';
-                      if (v.length < 6) return 'Password minimal 6 karakter';
+                      if (v == null || v.isEmpty) {
+                        return l10n.isEnglish
+                            ? 'Password is required'
+                            : 'Password wajib diisi';
+                      }
+                      if (v.length < 6) {
+                        return l10n.isEnglish
+                            ? 'Password must be at least 6 characters'
+                            : 'Password minimal 6 karakter';
+                      }
                       return null;
                     },
                   ),
@@ -250,20 +296,31 @@ class _RegisterPageState extends State<RegisterPage> {
                     obscureText: _obscureConfirmPassword,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: _inputDecoration(
-                      hint: 'Ulangi Password',
+                      hint: l10n.confirmPasswordHint,
                       icon: Icons.lock_clock_outlined,
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          _obscureConfirmPassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
                           color: const Color(0xFFB6CBE2),
                           size: 20,
                         ),
-                        onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                        onPressed: () => setState(
+                          () => _obscureConfirmPassword =
+                              !_obscureConfirmPassword,
+                        ),
                       ),
                     ),
                     validator: (v) {
-                      if (v == null || v.isEmpty) return 'Konfirmasi password wajib diisi';
-                      if (v != _passwordController.text) return 'Konfirmasi password tidak cocok';
+                      if (v == null || v.isEmpty) {
+                        return l10n.isEnglish
+                            ? 'Password confirmation is required'
+                            : 'Konfirmasi password wajib diisi';
+                      }
+                      if (v != _passwordController.text) {
+                        return l10n.pinMismatch;
+                      }
                       return null;
                     },
                   ),
@@ -286,11 +343,17 @@ class _RegisterPageState extends State<RegisterPage> {
                           ? const SizedBox(
                               width: 22,
                               height: 22,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
                             )
-                          : const Text(
-                              'Daftar Sekarang',
-                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                          : Text(
+                              l10n.registerBtn,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
                             ),
                     ),
                   ),
@@ -300,15 +363,18 @@ class _RegisterPageState extends State<RegisterPage> {
                   Center(
                     child: Wrap(
                       children: [
-                        const Text(
-                          'Sudah punya akun? ',
-                          style: TextStyle(color: Color(0xFF9CAFC6), fontSize: 13),
+                        Text(
+                          l10n.alreadyHaveAccount,
+                          style: const TextStyle(
+                            color: Color(0xFF9CAFC6),
+                            fontSize: 13,
+                          ),
                         ),
                         GestureDetector(
                           onTap: () => Navigator.pop(context),
-                          child: const Text(
-                            'Login',
-                            style: TextStyle(
+                          child: Text(
+                            l10n.loginBtn,
+                            style: const TextStyle(
                               color: AppTheme.cyan,
                               fontSize: 13,
                               fontWeight: FontWeight.w700,

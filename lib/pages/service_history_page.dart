@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
+import '../localization/app_localizations.dart';
 import '../models/service_record.dart';
 import '../models/vehicle.dart';
 import '../repositories/vehicle_repository.dart';
@@ -104,15 +105,14 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
   }
 
   Future<void> _addNewRecord() async {
+    final l10n = AppLocalizations.of(context);
     final vehicle = _selectedVehicle;
     if (vehicle == null || vehicle.id == null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Belum ada kendaraan yang dipilih. Silakan tambahkan kendaraan terlebih dahulu di menu Kendaraan.',
-            ),
+          SnackBar(
+            content: Text(l10n.noVehicleSelectedNotice),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -136,13 +136,13 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Tambah Catatan Servis (Blockchain)',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+              Text(
+                l10n.addServiceRecordDialogTitle,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
               ),
               const SizedBox(height: 4),
               Text(
-                'Kendaraan: ${vehicle.brand} ${vehicle.name} (${vehicle.plate})',
+                '${l10n.vehiclePrefix}: ${vehicle.brand} ${vehicle.name} (${vehicle.plate})',
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -158,8 +158,8 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                 TextField(
                   controller: titleCtrl,
                   decoration: InputDecoration(
-                    labelText: 'Nama Servis / Pekerjaan',
-                    hintText: 'Contoh: Ganti Oli Mesin',
+                    labelText: l10n.serviceNameLabel,
+                    hintText: l10n.serviceNameHint,
                     errorText: titleError,
                   ),
                   onChanged: (_) {
@@ -171,12 +171,12 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: serviceType,
-                  decoration: const InputDecoration(labelText: 'Kategori'),
-                  items: const [
-                    DropdownMenuItem(value: 'Servis', child: Text('Servis')),
-                    DropdownMenuItem(value: 'Penggantian', child: Text('Penggantian')),
-                    DropdownMenuItem(value: 'Pemeriksaan', child: Text('Pemeriksaan')),
-                    DropdownMenuItem(value: 'Lainnya', child: Text('Lainnya')),
+                  decoration: InputDecoration(labelText: l10n.serviceCategoryLabel),
+                  items: [
+                    DropdownMenuItem(value: 'Servis', child: Text(l10n.translateCategory('Servis'))),
+                    DropdownMenuItem(value: 'Penggantian', child: Text(l10n.translateCategory('Penggantian'))),
+                    DropdownMenuItem(value: 'Pemeriksaan', child: Text(l10n.translateCategory('Pemeriksaan'))),
+                    DropdownMenuItem(value: 'Lainnya', child: Text(l10n.translateCategory('Lainnya'))),
                   ],
                   onChanged: (val) {
                     if (val != null) setDlgState(() => serviceType = val);
@@ -185,26 +185,26 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: workshopCtrl,
-                  decoration: const InputDecoration(labelText: 'Bengkel'),
+                  decoration: InputDecoration(labelText: l10n.workshopLabel),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: mileageCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Kilometer Kendaraan (km)'),
+                  decoration: InputDecoration(labelText: l10n.vehicleMileageKmLabel),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: costCtrl,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Biaya (Rp)'),
+                  decoration: InputDecoration(labelText: l10n.serviceCostLabel),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: notesCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Catatan Tambahan',
-                    hintText: 'Contoh: Oli Fully Synthetic 0W-20 & filter oli baru',
+                  decoration: InputDecoration(
+                    labelText: l10n.additionalNotesLabel,
+                    hintText: l10n.additionalNotesHint,
                   ),
                 ),
               ],
@@ -213,7 +213,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogCtx, false),
-              child: const Text('Batal'),
+              child: Text(l10n.cancel),
             ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
@@ -221,7 +221,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                 final trimmedTitle = titleCtrl.text.trim();
                 if (trimmedTitle.isEmpty) {
                   setDlgState(() {
-                    titleError = 'Nama servis wajib diisi.';
+                    titleError = l10n.serviceNameRequiredError;
                   });
                   return;
                 }
@@ -273,7 +273,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                   Navigator.pop(dialogCtx, true);
                 }
               },
-              child: const Text('Simpan & Hash Blok'),
+              child: Text(l10n.saveAndHashBlockBtn),
             ),
           ],
         ),
@@ -286,8 +286,8 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            const SnackBar(
-              content: Text('Catatan servis berhasil ditambahkan ke database & blockchain.'),
+            SnackBar(
+              content: Text(l10n.serviceRecordSavedSuccess),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -302,15 +302,16 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final vehicle = _selectedVehicle;
     final allVehicles = _repo.vehicles;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text(
-          'Riwayat Servis',
-          style: TextStyle(
+        title: Text(
+          l10n.serviceHistoryTitle,
+          style: const TextStyle(
             color: AppTheme.textPrimary,
             fontWeight: FontWeight.w800,
             fontSize: 18,
@@ -318,7 +319,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Tambah Catatan Servis',
+            tooltip: l10n.addServiceRecordTooltip,
             icon: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.primary),
             onPressed: _addNewRecord,
           ),
@@ -355,12 +356,12 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                         Text(
                           vehicle != null
                               ? '${vehicle.brand} ${vehicle.name} ${vehicle.year}'
-                              : 'Belum Ada Kendaraan',
+                              : l10n.noVehicleTitle,
                           style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppTheme.textPrimary),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          vehicle?.plate ?? 'Tambahkan kendaraan di menu Kendaraan',
+                          vehicle?.plate ?? l10n.addVehicleInMenuHint,
                           style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
                         ),
                       ],
@@ -385,7 +386,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _isChainValid ? 'Blockchain Valid' : 'Integritas Rusak',
+                            _isChainValid ? l10n.blockchainValid : l10n.blockchainBroken,
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
@@ -443,7 +444,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(chip),
+                      label: Text(l10n.translateCategory(chip)),
                       selected: isSelected,
                       onSelected: (val) {
                         setState(() => _selectedFilter = chip);
@@ -473,19 +474,19 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
               Container(
                 padding: const EdgeInsets.all(32),
                 alignment: Alignment.center,
-                child: const Column(
+                child: Column(
                   children: [
-                    Icon(Icons.directions_car_outlined, size: 48, color: AppTheme.textSecondary),
-                    SizedBox(height: 12),
+                    const Icon(Icons.directions_car_outlined, size: 48, color: AppTheme.textSecondary),
+                    const SizedBox(height: 12),
                     Text(
-                      'Belum ada kendaraan',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppTheme.textPrimary),
+                      l10n.noVehicleTitle,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppTheme.textPrimary),
                     ),
-                    SizedBox(height: 6),
+                    const SizedBox(height: 6),
                     Text(
-                      'Tambahkan kendaraan di menu Kendaraan terlebih dahulu untuk mulai mencatat riwayat servis.',
+                      l10n.noVehicleDesc,
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
                 ),
@@ -499,28 +500,28 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                     const Icon(Icons.receipt_long_outlined, size: 48, color: AppTheme.textSecondary),
                     const SizedBox(height: 12),
                     Text(
-                      'Belum ada riwayat servis untuk ${vehicle.brand} ${vehicle.name}',
+                      '${l10n.noServiceHistoryTitle} (${vehicle.brand} ${vehicle.name})',
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Tekan tombol (+) di pojok kanan atas untuk menambah catatan servis baru.',
+                    Text(
+                      l10n.noServiceHistoryDesc,
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
                 ),
               )
             else
-              ..._filteredRecords.map((rec) => _buildRecordCard(rec)),
+              ..._filteredRecords.map((rec) => _buildRecordCard(rec, l10n)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildRecordCard(ServiceRecord rec) {
+  Widget _buildRecordCard(ServiceRecord rec, AppLocalizations l10n) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -554,7 +555,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      rec.title,
+                      l10n.translateReminderTitle(rec.title),
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14,
@@ -576,7 +577,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  rec.status,
+                  l10n.translateVehicleStatus(rec.status),
                   style: const TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
@@ -600,7 +601,7 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'SHA-256: ${rec.hash.substring(0, 16)}...',
+                    'SHA-256: ${rec.hash.length >= 16 ? rec.hash.substring(0, 16) : rec.hash}...',
                     style: const TextStyle(
                       fontSize: 9,
                       fontFamily: 'monospace',

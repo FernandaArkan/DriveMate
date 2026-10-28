@@ -19,7 +19,8 @@ class TimeZoneOption {
     required this.offsetHours,
   });
 
-  String get label => '$abbreviation - $name (GMT${offsetHours >= 0 ? "+$offsetHours" : "$offsetHours"})';
+  String get label =>
+      '$abbreviation - $name (GMT${offsetHours >= 0 ? "+$offsetHours" : "$offsetHours"})';
 }
 
 class TimeZoneService extends ChangeNotifier {
@@ -173,6 +174,18 @@ class TimeZoneService extends ChangeNotifier {
     }
   }
 
+  /// Mendapatkan singkatan zona waktu yang dinamis (memperhitungkan Daylight Saving Time jika berlaku)
+  String getDynamicAbbreviation(tz.TZDateTime inZone) {
+    final tzName = inZone.timeZoneName;
+    // Jika tzName berupa nama resmi (bukan offset +07 / +08) gunakan tzName
+    if (tzName.isNotEmpty &&
+        !tzName.startsWith('+') &&
+        !tzName.startsWith('-')) {
+      return tzName;
+    }
+    return currentTimeZone.abbreviation;
+  }
+
   /// Memformat DateTime untuk tampilan antarmuka sesuai zona waktu yang dipilih
   String formatDateTime(
     DateTime dt, {
@@ -184,6 +197,8 @@ class TimeZoneService extends ChangeNotifier {
         (LanguageService.instance.isEnglish ? 'en_US' : 'id_ID');
 
     final inZone = toTargetZone(dt);
+    final abbreviation = getDynamicAbbreviation(inZone);
+
     DateFormat formatter;
     try {
       formatter = DateFormat(pattern, effectiveLocale);
@@ -191,14 +206,14 @@ class TimeZoneService extends ChangeNotifier {
       try {
         formatter = DateFormat(pattern);
       } catch (_) {
-        return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} $currentAbbreviation';
+        return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} $abbreviation';
       }
     }
 
     final formatted = formatter.format(inZone);
 
     if (includeAbbreviation) {
-      return '$formatted $currentAbbreviation';
+      return '$formatted $abbreviation';
     }
     return formatted;
   }
@@ -208,16 +223,35 @@ class TimeZoneService extends ChangeNotifier {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return null;
 
-    final parsedIso = DateTime.tryParse(trimmed);
+    // Bersihkan akhiran zona waktu seperti ' WIB', ' WITA', ' WIT', ' UTC', ' JST', ' EST', ' EDT'
+    final cleanInput = trimmed.replaceAll(
+      RegExp(r'\s+(WIB|WITA|WIT|UTC|JST|SGT|EST|EDT)$', caseSensitive: false),
+      '',
+    );
+
+    final parsedIso = DateTime.tryParse(cleanInput);
     if (parsedIso != null) return parsedIso;
 
-    try {
-      return DateFormat('yyyy-MM-dd HH:mm').parse(trimmed);
-    } catch (_) {}
+    final formats = [
+      'yyyy-MM-dd HH:mm',
+      'yyyy-MM-dd HH:mm:ss',
+      'dd MMM yyyy, HH:mm',
+      'dd MMMM yyyy, HH:mm',
+      'dd MMM yyyy',
+      'dd MMMM yyyy',
+      'yyyy-MM-dd',
+    ];
 
-    try {
-      return DateFormat('dd MMM yyyy, HH:mm').parse(trimmed);
-    } catch (_) {}
+    for (final pattern in formats) {
+      for (final loc in ['id_ID', 'en_US']) {
+        try {
+          return DateFormat(pattern, loc).parse(cleanInput);
+        } catch (_) {}
+      }
+      try {
+        return DateFormat(pattern).parse(cleanInput);
+      } catch (_) {}
+    }
 
     return null;
   }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../localization/app_localizations.dart';
 import '../repositories/user_repository.dart';
-import '../services/biometric_service.dart';
+import '../services/security_service.dart';
 import '../theme/app_theme.dart';
 import 'register_page.dart';
 
@@ -29,7 +30,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _checkBiometrics() async {
-    final available = await BiometricService.instance.isBiometricAvailable();
+    final available = await SecurityService.instance.isBiometricEnrolled();
     if (mounted) {
       setState(() => _canUseBiometrics = available);
     }
@@ -58,23 +59,30 @@ class _LoginPageState extends State<LoginPage> {
     if (success) {
       Navigator.pushReplacementNamed(context, '/home');
     } else {
+      final l10n = AppLocalizations.of(context);
       _showMessage(
-        'Email/No. HP atau password salah. Coba: andi@email.com / 123456',
+        l10n.loginFailedMsg,
         isError: true,
       );
     }
   }
 
   Future<void> _loginWithBiometrics() async {
-    final authenticated = await BiometricService.instance.authenticate();
+    final l10n = AppLocalizations.of(context);
+    final authenticated = await SecurityService.instance.authenticateBiometric(
+      reason: l10n.biometricPromptReason,
+    );
     if (authenticated && mounted) {
       final user = UserRepository.instance.currentUser;
       if (user != null) {
-        await UserRepository.instance.login(user.email, user.passwordHash ?? '123456');
+        await UserRepository.instance.login(
+          user.email,
+          user.passwordHash ?? '123456',
+        );
         if (mounted) Navigator.pushReplacementNamed(context, '/home');
       }
     } else if (mounted) {
-      _showMessage('Autentikasi biometrik tidak berhasil atau dibatalkan.');
+      _showMessage(l10n.biometricAuthFailedMsg);
     }
   }
 
@@ -138,6 +146,8 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -186,8 +196,7 @@ class _LoginPageState extends State<LoginPage> {
                             color: AppTheme.primary.withValues(alpha: 0.12),
                             boxShadow: [
                               BoxShadow(
-                                color: AppTheme.primary
-                                    .withValues(alpha: 0.2),
+                                color: AppTheme.primary.withValues(alpha: 0.2),
                                 blurRadius: 28,
                               ),
                             ],
@@ -208,11 +217,12 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         const SizedBox(height: 9),
-                        const Text(
-                          'Login ke Akun Anda',
-                          style: TextStyle(
+                        Text(
+                          l10n.loginSubheading,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
                             color: Color(0xFFD5E4F5),
-                            fontSize: 14,
+                            fontSize: 13,
                           ),
                         ),
                       ],
@@ -227,15 +237,19 @@ class _LoginPageState extends State<LoginPage> {
                       fontSize: 14,
                     ),
                     decoration: _inputDecoration(
-                      hint: 'Email atau No. HP',
+                      hint: l10n.identifierHint,
                       icon: Icons.mail_outline_rounded,
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
-                        return 'Email atau nomor HP wajib diisi.';
+                        return l10n.isEnglish
+                            ? 'Email or phone number is required.'
+                            : 'Email atau nomor HP wajib diisi.';
                       }
                       if (value.trim().length < 4) {
-                        return 'Masukkan email atau nomor HP yang valid.';
+                        return l10n.isEnglish
+                            ? 'Please enter a valid email or phone number.'
+                            : 'Masukkan email atau nomor HP yang valid.';
                       }
                       return null;
                     },
@@ -249,7 +263,7 @@ class _LoginPageState extends State<LoginPage> {
                       fontSize: 14,
                     ),
                     decoration: _inputDecoration(
-                      hint: 'Password',
+                      hint: l10n.passwordLabel,
                       icon: Icons.lock_outline_rounded,
                       suffixIcon: IconButton(
                         onPressed: () {
@@ -268,10 +282,14 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'Password wajib diisi.';
+                        return l10n.isEnglish
+                            ? 'Password is required.'
+                            : 'Password wajib diisi.';
                       }
                       if (value.length < 5) {
-                        return 'Password minimal 6 karakter.';
+                        return l10n.isEnglish
+                            ? 'Password must be at least 6 characters.'
+                            : 'Password minimal 6 karakter.';
                       }
                       return null;
                     },
@@ -296,10 +314,10 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          'Ingat saya',
-                          style: TextStyle(
+                          l10n.rememberMe,
+                          style: const TextStyle(
                             color: Color(0xFFD5E4F5),
                             fontSize: 12,
                           ),
@@ -311,9 +329,9 @@ class _LoginPageState extends State<LoginPage> {
                             'Password default: 123456 (Akun: andi@email.com)',
                           );
                         },
-                        child: const Text(
-                          'Lupa password?',
-                          style: TextStyle(
+                        child: Text(
+                          l10n.forgotPassword,
+                          style: const TextStyle(
                             color: AppTheme.cyan,
                             fontSize: 11,
                           ),
@@ -345,9 +363,9 @@ class _LoginPageState extends State<LoginPage> {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Text(
-                                    'Login',
-                                    style: TextStyle(
+                                : Text(
+                                    l10n.loginBtn,
+                                    style: const TextStyle(
                                       fontWeight: FontWeight.w800,
                                       fontSize: 15,
                                     ),
@@ -373,22 +391,22 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
                   const SizedBox(height: 28),
-                  const Row(
+                  Row(
                     children: [
-                      Expanded(
+                      const Expanded(
                         child: Divider(color: Color(0xFF29415D)),
                       ),
                       Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 14),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                         child: Text(
-                          'atau masuk dengan',
-                          style: TextStyle(
+                          l10n.orSignInWith,
+                          style: const TextStyle(
                             color: Color(0xFF9CAFC6),
                             fontSize: 11,
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         child: Divider(color: Color(0xFF29415D)),
                       ),
                     ],
@@ -402,7 +420,9 @@ class _LoginPageState extends State<LoginPage> {
                           label: 'Google',
                           onTap: () {
                             _showMessage(
-                              'Login Google menggunakan API OAuth backend.',
+                              l10n.isEnglish
+                                  ? 'Google Sign-In uses backend OAuth API.'
+                                  : 'Login Google menggunakan API OAuth backend.',
                             );
                           },
                         ),
@@ -414,7 +434,9 @@ class _LoginPageState extends State<LoginPage> {
                           label: 'Apple',
                           onTap: () {
                             _showMessage(
-                              'Apple Sign-In tersedia di iOS dengan Apple Developer ID.',
+                              l10n.isEnglish
+                                  ? 'Apple Sign-In is available on iOS devices.'
+                                  : 'Apple Sign-In tersedia di iOS dengan Apple Developer ID.',
                             );
                           },
                         ),
@@ -426,9 +448,9 @@ class _LoginPageState extends State<LoginPage> {
                     child: Wrap(
                       alignment: WrapAlignment.center,
                       children: [
-                        const Text(
-                          'Belum punya akun? ',
-                          style: TextStyle(
+                        Text(
+                          l10n.noAccountYet,
+                          style: const TextStyle(
                             color: Color(0xFF9CAFC6),
                             fontSize: 12,
                           ),
@@ -442,9 +464,9 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             );
                           },
-                          child: const Text(
-                            'Daftar',
-                            style: TextStyle(
+                          child: Text(
+                            l10n.registerLink,
+                            style: const TextStyle(
                               color: AppTheme.cyan,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
