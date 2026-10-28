@@ -1,11 +1,12 @@
 <?php
+declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
@@ -13,195 +14,147 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/qrcode.php';
 require_once __DIR__ . '/pdf_generator.php';
-require_once __DIR__ . '/blockchain.php';
 
 $config = require __DIR__ . '/config.php';
 
+function respond(int $status, array $payload): never {
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 try {
-    // 1. Read input parameters from POST body or GET query
     $input = [];
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $raw = file_get_contents('php://input');
-        $decoded = json_decode($raw, true);
-        if (is_array($decoded)) {
-            $input = $decoded;
-        } else {
-            $input = $_POST;
-        }
+        $decoded = json_decode($raw ?: '', true);
+        $input = is_array($decoded) ? $decoded : $_POST;
     } else {
         $input = $_GET;
     }
 
-    $serviceRecordId = filter_var($input['service_record_id'] ?? $input['service_id'] ?? null, FILTER_VALIDATE_INT);
+    $serviceRecordId = filter_var(
+        $input['service_record_id'] ?? $input['service_id'] ?? null,
+        FILTER_VALIDATE_INT
+    );
     $vehicleId = filter_var($input['vehicle_id'] ?? null, FILTER_VALIDATE_INT);
     $userId = filter_var($input['user_id'] ?? null, FILTER_VALIDATE_INT);
     $forceRegenerate = filter_var($input['force_regenerate'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
-    // 2. Validate Authentication & Authorization
-    // Check Authorization header for Bearer token if userId not supplied directly
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-    if (empty($userId) && !empty($authHeader) && preg_match('/Bearer\s+(.+)$/i', $authHeader, $matches)) {
-        $token = trim($matches[1]);
-        // Validate user by token if users table has session/token
-        // Or extract user_id from token if implemented
-    }
-
     if (!$serviceRecordId || $serviceRecordId < 1) {
-        http_response_code(400);
-        echo json_encode([
-            'success' => false,
-            'message' => 'service_record_id wajib disertakan dengan ID yang valid.',
-        ]);
-        exit;
+        respond(400, ['success' => false, 'message' => 'service_record_id wajib diisi dengan ID yang valid.']);
     }
 
-    // 3. Find Service Record in database (support both service_records and service_record table names)
+    // Cari tabel servis yang tersedia, mengutamakan nama service_records.
     $tableServiceRecords = 'service_records';
-    try {
-        $checkTable = $pdo->query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('service_records', 'service_record') ORDER BY CASE WHEN table_name = 'service_records' THEN 1 ELSE 2 END LIMIT 1");
-        $tableRow = $checkTable->fetch();
-        if ($tableRow && !empty($tableRow['table_name'])) {
-            $tableServiceRecords = $tableRow['table_name'];
+    $tableCheck = $pdo->query(
+        "SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'public'
+           AND table_name IN ('service_records', 'service_record')
+         ORDER BY CASE WHEN table_name = 'service_records' THEN 1 ELSE 2 END
+         LIMIT 1"
+    );
+    $tableRow = $tableCheck->fetch(PDO::FETCH_ASSOC);
+    if (!empty($tableRow['table_name'])) {
+        $candidate = $tableRow['table_name'];
+        if (in_array($candidate, ['service_records', 'service_record'], true)) {
+            $tableServiceRecords = $candidate;
         }
-    } catch (Throwable $e) {
-        // Fallback to service_records
-        $tableServiceRecords = 'service_records';
     }
 
-    // Query columns of service table to support snake_case and camelCase
-    $colVehicleId = 'vehicle_id';
-    try {
-        $checkCols = $pdo->query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '{$tableServiceRecords}' AND column_name IN ('vehicle_id', 'vehicleid', 'vehicleId')");
-        $cRow = $checkCols->fetch();
-        if ($cRow) {
-            $colVehicleId = $cRow['column_name'];
+    $columnsStmt = $pdo->prepare(
+        "SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = :table_name"
+    );
+    $columnsStmt->execute(['table_name' => $tableServiceRecords]);
+    $columns = $columnsStmt->fetchAll(PDO::FETCH_COLUMN);
+    $vehicleColumn = null;
+    foreach (['vehicle_id', 'vehicleid', 'vehicleId'] as $candidate) {
+        if (in_array($candidate, $columns, true)) {
+            $vehicleColumn = $candidate;
+            break;
         }
-    } catch (Throwable $e) {
-        $colVehicleId = 'vehicle_id';
+    }
+    if ($vehicleColumn === null) {
+        respond(500, ['success' => false, 'message' => 'Kolom kendaraan pada tabel servis tidak ditemukan.']);
     }
 
     $stmtSvc = $pdo->prepare("SELECT * FROM public.{$tableServiceRecords} WHERE id = :id LIMIT 1");
     $stmtSvc->execute(['id' => $serviceRecordId]);
-    $serviceRecord = $stmtSvc->fetch();
+    $serviceRecord = $stmtSvc->fetch(PDO::FETCH_ASSOC);
+    if ($serviceRecord) {
+    $serviceRecord['title'] = $serviceRecord['description'] ?? '';
+    $serviceRecord['date'] = $serviceRecord['service_date'] ?? '';
+}
 
-    if (!$serviceRecord) {
-        http_response_code(404);
-        echo json_encode([
-            'success' => false,
-            'message' => "Catatan servis dengan ID {$serviceRecordId} tidak ditemukan dalam database.",
-        ]);
-        exit;
+    $resolvedVehicleId = (int)($serviceRecord[$vehicleColumn] ?? 0);
+    if ($vehicleId && $vehicleId !== $resolvedVehicleId) {
+        respond(400, ['success' => false, 'message' => 'Catatan servis tidak sesuai dengan kendaraan yang diberikan.']);
     }
 
-    // Extract vehicle ID from service record if not supplied
-    $recVehicleId = (int) ($serviceRecord[$colVehicleId] ?? $serviceRecord['vehicle_id'] ?? $serviceRecord['vehicleId'] ?? 0);
-    if ($vehicleId && $vehicleId !== $recVehicleId) {
-        http_response_code(400);
-        echo json_encode([
-            'success' => false,
-            'message' => 'Catatan servis tidak sesuai dengan ID kendaraan yang diberikan.',
-        ]);
-        exit;
-    }
-    $vehicleId = $recVehicleId;
-
-    // 4. Query Vehicle & Validate User Ownership
-    $stmtVeh = $pdo->prepare("SELECT * FROM public.vehicles WHERE id = :id LIMIT 1");
-    $stmtVeh->execute(['id' => $vehicleId]);
-    $vehicle = $stmtVeh->fetch();
-
+    $stmtVeh = $pdo->prepare('SELECT * FROM public.vehicles WHERE id = :id LIMIT 1');
+    $stmtVeh->execute(['id' => $resolvedVehicleId]);
+    $vehicle = $stmtVeh->fetch(PDO::FETCH_ASSOC);
     if (!$vehicle) {
-        http_response_code(404);
-        echo json_encode([
-            'success' => false,
-            'message' => "Kendaraan dengan ID {$vehicleId} tidak ditemukan.",
-        ]);
-        exit;
+        respond(404, ['success' => false, 'message' => 'Data kendaraan tidak ditemukan.']);
     }
 
-    // If userId provided, enforce ownership check
-    if ($userId && $userId > 0) {
-        $ownerId = (int) $vehicle['user_id'];
-        if ($ownerId !== $userId) {
-            http_response_code(403);
-            echo json_encode([
-                'success' => false,
-                'message' => 'Akses ditolak. Pengguna tidak berhak mengakses dokumen kendaraan milik pengguna lain.',
-            ]);
-            exit;
-        }
-    }
-
-    // 5. Check if document already exists in blockchain_records
-    $existingRecord = null;
-    try {
-        $stmtCheck = $pdo->prepare("SELECT * FROM public.blockchain_records WHERE service_record_id = :svc_id ORDER BY id DESC LIMIT 1");
-        $stmtCheck->execute(['svc_id' => $serviceRecordId]);
-        $existingRecord = $stmtCheck->fetch();
-    } catch (Throwable $e) {
-        // Table blockchain_records might need to be checked
-        error_log('Notice: blockchain_records query: ' . $e->getMessage());
+    // Cek kepemilikan bila user_id dikirim oleh aplikasi.
+    if ($userId && $userId > 0 && (int)($vehicle['user_id'] ?? 0) !== $userId) {
+        respond(403, ['success' => false, 'message' => 'Akses ditolak: kendaraan bukan milik pengguna ini.']);
     }
 
     $storageDir = __DIR__ . '/storage/pdf';
-    if (!is_dir($storageDir)) {
-        @mkdir($storageDir, 0777, true);
+    if (!is_dir($storageDir) && !mkdir($storageDir, 0775, true) && !is_dir($storageDir)) {
+        throw new RuntimeException('Folder penyimpanan PDF tidak dapat dibuat.');
     }
 
-    $appBaseUrl = rtrim($config['app_base_url'] ?? 'https://drivemate-3c397.containers.snapdeploy.app', '/');
-    // If request has host header, prefer dynamic host for local dev/testing
-    if (!empty($_SERVER['HTTP_HOST'])) {
-        $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'];
-        if (str_contains($host, 'localhost') || str_contains($host, '127.0.0.1')) {
-            // Keep app_base_url for production QR code compliance, but allow dynamic endpoint URL
-        }
+    $appBaseUrl = rtrim((string)($config['app_base_url'] ?? 'https://drivemate-3c397.containers.snapdeploy.app'), '/');
+
+    // Ambil dokumen sebelumnya jika tersedia dan tidak diminta dibuat ulang.
+    $existingRecord = null;
+    try {
+        $stmtExisting = $pdo->prepare(
+            'SELECT * FROM public.blockchain_records WHERE service_record_id = :service_id ORDER BY id DESC LIMIT 1'
+        );
+        $stmtExisting->execute(['service_id' => $serviceRecordId]);
+        $existingRecord = $stmtExisting->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $ignored) {
+        // Tabel metadata harus tersedia untuk menyimpan arsip verifikasi.
     }
 
-    // If document already generated and not forcing regeneration, return existing
     if ($existingRecord && !$forceRegenerate && !empty($existingRecord['document_id'])) {
-        $docId = $existingRecord['document_id'];
-        $docHash = $existingRecord['document_hash'];
-        $pdfPath = $existingRecord['pdf_path'] ?? ($storageDir . "/{$docId}.pdf");
-
-        // Verify PDF file exists, if not re-generate
-        if (file_exists($pdfPath)) {
-            $verificationUrl = "{$appBaseUrl}/api/verify.php?document_id={$docId}";
-            $pdfUrl = "{$appBaseUrl}/api/view_pdf.php?document_id={$docId}";
-            $pdfDownloadUrl = "{$appBaseUrl}/api/view_pdf.php?document_id={$docId}&download=1";
-
-            echo json_encode([
+        $existingId = (string)$existingRecord['document_id'];
+        $existingPath = (string)($existingRecord['pdf_path'] ?? ($storageDir . '/' . $existingId . '.pdf'));
+        if (is_file($existingPath)) {
+            respond(200, [
                 'success' => true,
-                'message' => 'Dokumen sertifikat servis ditemukan pada arsip blockchain.',
+                'message' => 'Sertifikat yang sudah ada ditemukan.',
                 'data' => [
-                    'document_id' => $docId,
-                    'document_hash' => $docHash,
-                    'verification_status' => $existingRecord['verification_status'] ?? 'pending',
-                    'transaction_hash' => $existingRecord['transaction_hash'] ?? null,
-                    'network_name' => $existingRecord['network_name'] ?? $config['blockchain_network_name'],
-                    'contract_address' => $existingRecord['contract_address'] ?? $config['blockchain_contract_address'],
-                    'pdf_path' => $pdfPath,
-                    'verification_url' => $verificationUrl,
-                    'pdf_url' => $pdfUrl,
-                    'pdf_download_url' => $pdfDownloadUrl,
-                    'created_at' => $existingRecord['created_at'] ?? date('Y-m-d H:i:s T'),
-                    'is_cached' => true,
-                ],
+                    'document_id' => $existingId,
+                    'document_hash' => $existingRecord['document_hash'],
+                    'verification_status' => 'hash_verification_available',
+                    'verification_method' => 'SHA-256 dibandingkan dengan hash referensi di PostgreSQL; bukan blockchain.',
+                    'verification_url' => $appBaseUrl . '/api/verify.php?document_id=' . rawurlencode($existingId),
+                    'pdf_url' => $appBaseUrl . '/api/view_pdf.php?document_id=' . rawurlencode($existingId),
+                    'pdf_download_url' => $appBaseUrl . '/api/view_pdf.php?document_id=' . rawurlencode($existingId) . '&download=1',
+                    'is_cached' => true
+                ]
             ]);
-            exit;
         }
     }
 
-    // 6. Generate UUID v4 for document_id
+    // UUID v4 untuk ID dokumen.
     $bytes = random_bytes(16);
-    $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40); // version 4
-    $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80); // variant RFC 4122
-    $documentId = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+    $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+    $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+    $hex = bin2hex($bytes);
+    $documentId = substr($hex, 0, 8) . '-' . substr($hex, 8, 4) . '-' .
+                  substr($hex, 12, 4) . '-' . substr($hex, 16, 4) . '-' . substr($hex, 20, 12);
 
-    // 7. QR Code contains the exact verification URL
-    $verificationUrl = "{$appBaseUrl}/api/verify.php?document_id={$documentId}";
+    $verificationUrl = $appBaseUrl . '/api/verify.php?document_id=' . rawurlencode($documentId);
 
-    // 8. Generate the final PDF
+    // Gunakan generator PDF yang sudah ada di proyek.
     $generator = new PdfCertificateGenerator(
         $vehicle,
         $serviceRecord,
@@ -210,94 +163,60 @@ try {
         date('Y-m-d H:i:s T')
     );
     $pdfBinary = $generator->generate();
-
-    // 9. Calculate SHA-256 hash from the FINAL generated PDF bytes
-    $documentHash = hash('sha256', $pdfBinary);
-
-    // 10. Save PDF to storage path
-    $pdfFilePath = "{$storageDir}/{$documentId}.pdf";
-    file_put_contents($pdfFilePath, $pdfBinary);
-
-    // 11. Send hash and document ID to Blockchain Smart Contract
-    $blockchain = new BlockchainService($config);
-    $bcResult = $blockchain->recordDocument($documentId, $documentHash, $serviceRecordId);
-
-    $verificationStatus = $bcResult['status'];
-    $transactionHash = $bcResult['transaction_hash'];
-    $networkName = $bcResult['network_name'];
-    $contractAddress = $bcResult['contract_address'];
-
-    // 12. Save metadata to blockchain_records in PostgreSQL
-    try {
-        $stmtInsert = $pdo->prepare(
-            'INSERT INTO public.blockchain_records (
-                document_id, service_record_id, document_hash, transaction_hash,
-                network_name, contract_address, pdf_path, verification_status, created_at
-            ) VALUES (
-                :doc_id, :svc_id, :doc_hash, :tx_hash,
-                :net_name, :contract, :pdf_path, :status, NOW()
-            )
-            RETURNING id, document_id, service_record_id, document_hash, transaction_hash,
-                      network_name, contract_address, pdf_path, verification_status, created_at'
-        );
-
-        $stmtInsert->execute([
-            'doc_id' => $documentId,
-            'svc_id' => $serviceRecordId,
-            'doc_hash' => $documentHash,
-            'tx_hash' => $transactionHash,
-            'net_name' => $networkName,
-            'contract' => $contractAddress,
-            'pdf_path' => $pdfFilePath,
-            'status' => $verificationStatus,
-        ]);
-        $savedRecord = $stmtInsert->fetch();
-    } catch (Throwable $e) {
-        error_log('Error saving to blockchain_records: ' . $e->getMessage());
-        // Fallback gracefully without breaking the PDF response
+    if (!is_string($pdfBinary) || $pdfBinary === '') {
+        throw new RuntimeException('Generator PDF tidak menghasilkan isi PDF.');
     }
 
-    $pdfUrl = "{$appBaseUrl}/api/view_pdf.php?document_id={$documentId}";
-    $pdfDownloadUrl = "{$appBaseUrl}/api/view_pdf.php?document_id={$documentId}&download=1";
+    // Hash dihitung dari byte PDF final.
+    $documentHash = hash('sha256', $pdfBinary);
+    $pdfFilePath = $storageDir . '/' . $documentId . '.pdf';
+    if (file_put_contents($pdfFilePath, $pdfBinary, LOCK_EX) === false) {
+        throw new RuntimeException('PDF gagal disimpan.');
+    }
 
-    http_response_code(201);
-    echo json_encode([
+    // Tidak memanggil blockchain.php. Hash referensi disimpan di database.
+    // Status "pending" hanya menjaga kompatibilitas CHECK constraint tabel lama.
+    $stmtInsert = $pdo->prepare(
+        'INSERT INTO public.blockchain_records
+            (document_id, service_record_id, document_hash, transaction_hash,
+             network_name, contract_address, pdf_path, verification_status, created_at)
+         VALUES
+            (:document_id, :service_record_id, :document_hash, NULL,
+             :network_name, NULL, :pdf_path, :verification_status, NOW())
+         RETURNING id, document_id, service_record_id, document_hash, pdf_path, created_at'
+    );
+    $stmtInsert->execute([
+        'document_id' => $documentId,
+        'service_record_id' => $serviceRecordId,
+        'document_hash' => $documentHash,
+        'network_name' => 'PostgreSQL SHA-256 (tanpa blockchain)',
+        'pdf_path' => $pdfFilePath,
+        'verification_status' => 'pending'
+    ]);
+
+    respond(201, [
         'success' => true,
-        'message' => 'Dokumen sertifikat riwayat servis berhasil dibuat dan didaftarkan.',
+        'message' => 'PDF sertifikat berhasil dibuat. Hash referensi disimpan di PostgreSQL.',
         'data' => [
             'document_id' => $documentId,
             'service_record_id' => $serviceRecordId,
             'document_hash' => $documentHash,
-            'verification_status' => $verificationStatus,
-            'transaction_hash' => $transactionHash,
-            'network_name' => $networkName,
-            'contract_address' => $contractAddress,
+            'verification_status' => 'hash_verification_available',
+            'verification_method' => 'SHA-256 dibandingkan dengan hash referensi di PostgreSQL; bukan blockchain.',
+            'transaction_hash' => null,
+            'network_name' => 'PostgreSQL SHA-256 (tanpa blockchain)',
+            'contract_address' => null,
             'pdf_path' => $pdfFilePath,
             'verification_url' => $verificationUrl,
-            'pdf_url' => $pdfUrl,
-            'pdf_download_url' => $pdfDownloadUrl,
-            'blockchain_message' => $bcResult['message'] ?? '',
-            'created_at' => date('Y-m-d H:i:s T'),
-            'vehicle' => [
-                'id' => (int) $vehicle['id'],
-                'name' => $vehicle['name'],
-                'brand' => $vehicle['brand'] ?? '',
-                'plate_number' => $vehicle['plate_number'] ?? $vehicle['plate'] ?? '',
-                'year' => (int) $vehicle['year'],
-            ],
-            'service_record' => [
-                'id' => (int) $serviceRecord['id'],
-                'title' => $serviceRecord['title'] ?? '',
-                'date' => $serviceRecord['date'] ?? '',
-                'cost' => (int) ($serviceRecord['cost'] ?? 0),
-            ],
-        ],
+            'pdf_url' => $appBaseUrl . '/api/view_pdf.php?document_id=' . rawurlencode($documentId),
+            'pdf_download_url' => $appBaseUrl . '/api/view_pdf.php?document_id=' . rawurlencode($documentId) . '&download=1'
+        ]
     ]);
 } catch (Throwable $e) {
-    error_log('Generate PDF API error: ' . $e->getMessage());
-    http_response_code(500);
-    echo json_encode([
+    error_log('Generate PDF/hash verification error: ' . $e->getMessage());
+    respond(500, [
         'success' => false,
-        'message' => 'Terjadi kesalahan sistem saat menghasilkan dokumen PDF: ' . $e->getMessage(),
+        'message' => 'Gagal membuat sertifikat PDF.',
+        'detail' => $e->getMessage()
     ]);
 }
