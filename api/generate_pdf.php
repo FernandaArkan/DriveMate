@@ -68,23 +68,52 @@ try {
     );
     $columnsStmt->execute(['table_name' => $tableServiceRecords]);
     $columns = $columnsStmt->fetchAll(PDO::FETCH_COLUMN);
-    $vehicleColumn = null;
-    foreach (['vehicle_id', 'vehicleid', 'vehicleId'] as $candidate) {
-        if (in_array($candidate, $columns, true)) {
-            $vehicleColumn = $candidate;
-            break;
-        }
-    }
-    if ($vehicleColumn === null) {
-        respond(500, ['success' => false, 'message' => 'Kolom kendaraan pada tabel servis tidak ditemukan.']);
-    }
 
-    $stmtSvc = $pdo->prepare("SELECT * FROM public.{$tableServiceRecords} WHERE id = :id LIMIT 1");
-    $stmtSvc->execute(['id' => $serviceRecordId]);
-    $serviceRecord = $stmtSvc->fetch(PDO::FETCH_ASSOC);
-    if ($serviceRecord) {
-    $serviceRecord['title'] = $serviceRecord['description'] ?? '';
-    $serviceRecord['date'] = $serviceRecord['service_date'] ?? '';
+$vehicleColumn = null;
+
+foreach (['vehicle_id', 'vehicleid', 'vehicleId'] as $candidate) {
+    if (in_array($candidate, $columns, true)) {
+        $vehicleColumn = $candidate;
+        break;
+    }
+}
+
+if ($vehicleColumn === null) {
+    respond(500, [
+        'success' => false,
+        'message' => 'Kolom kendaraan pada tabel servis tidak ditemukan.'
+    ]);
+}
+
+$stmtSvc = $pdo->prepare(
+    "SELECT * FROM public.{$tableServiceRecords} WHERE id = :id LIMIT 1"
+);
+
+$stmtSvc->execute(['id' => $serviceRecordId]);
+
+// Cukup panggil fetch() satu kali.
+$serviceRecord = $stmtSvc->fetch(PDO::FETCH_ASSOC);
+
+if (!$serviceRecord) {
+    respond(404, [
+        'success' => false,
+        'message' => 'Data servis tidak ditemukan.',
+        'service_record_id' => $serviceRecordId,
+        'table' => $tableServiceRecords
+    ]);
+}
+
+$serviceRecord['title'] = $serviceRecord['description'] ?? '';
+$serviceRecord['date'] = $serviceRecord['service_date'] ?? '';
+
+$resolvedVehicleId = (int)($serviceRecord[$vehicleColumn] ?? 0);
+
+if ($resolvedVehicleId < 1) {
+    respond(404, [
+        'success' => false,
+        'message' => 'ID kendaraan pada catatan servis tidak valid.',
+        'service_record_id' => $serviceRecordId
+    ]);
 }
 
     $resolvedVehicleId = (int)($serviceRecord[$vehicleColumn] ?? 0);
