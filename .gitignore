@@ -61,3 +61,5 @@ api/config.local.php
 drivemate_pure/
 
 /router.php
+
+/api/vendor/

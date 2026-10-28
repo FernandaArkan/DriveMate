@@ -6,3 +6,5 @@ api/.env.*
 !api/.env.example
 .git
 .gitignore
+api/vendor/
+api/config.local.php

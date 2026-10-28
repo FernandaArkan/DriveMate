@@ -250,6 +250,46 @@ class AppLocalizations {
   String get addVehicleInMenuHint => isEnglish
       ? 'Add a vehicle in the Vehicles menu'
       : 'Tambahkan kendaraan di menu Kendaraan';
+  String get generatePdfCertificate =>
+      isEnglish ? 'Sertifikat PDF & Blockchain' : 'Sertifikat PDF & Blockchain';
+  String get viewPdf => isEnglish ? 'Lihat PDF' : 'Lihat PDF';
+  String get downloadPdf => isEnglish ? 'Unduh PDF' : 'Unduh PDF';
+  String get verifyBlockchain =>
+      isEnglish ? 'Verifikasi Blockchain' : 'Verifikasi Blockchain';
+  String get documentIdLabel =>
+      isEnglish ? 'ID Dokumen' : 'ID Dokumen';
+  String get documentHashLabel =>
+      isEnglish ? 'Hash Dokumen (SHA-256)' : 'Hash Dokumen (SHA-256)';
+  String get blockchainStatusLabel =>
+      isEnglish ? 'Status Blockchain' : 'Status Blockchain';
+  String get verifiedStatus =>
+      isEnglish ? 'Terverifikasi On-Chain' : 'Terverifikasi On-Chain';
+  String get pendingStatus =>
+      isEnglish ? 'Menunggu Konfirmasi' : 'Menunggu Konfirmasi';
+  String get failedStatus =>
+      isEnglish ? 'Transaksi Gagal' : 'Transaksi Gagal';
+  String get certificateDialogTitle =>
+      isEnglish ? 'Sertifikat Digital Blockchain' : 'Sertifikat Digital Blockchain';
+  String get verifyServiceDocDialogTitle =>
+      isEnglish ? 'Verifikasi Dokumen Servis' : 'Verifikasi Dokumen Servis';
+  String get verifyInputHint => isEnglish
+      ? 'Masukkan ID Dokumen (UUID)...'
+      : 'Masukkan ID Dokumen (UUID)...';
+  String get checkIntegrityBtn =>
+      isEnglish ? 'Cek Integritas' : 'Cek Integritas';
+  String get generatingPdfTitle =>
+      isEnglish ? 'Membuat Sertifikat' : 'Membuat Sertifikat';
+  String get generatingPdfDesc => isEnglish
+      ? 'Sedang membuat dokumen PDF dan mencatat ke blockchain...'
+      : 'Sedang membuat dokumen PDF dan mencatat ke blockchain...';
+  String get copySuccessNotice =>
+      isEnglish ? 'Tersalin ke clipboard' : 'Tersalin ke clipboard';
+  String get documentFoundAndVerified => isEnglish
+      ? 'Dokumen sah dan terdaftar pada blockchain.'
+      : 'Dokumen sah dan terdaftar pada blockchain.';
+  String get documentNotFoundNotice => isEnglish
+      ? 'ID Dokumen tidak ditemukan dalam sistem.'
+      : 'ID Dokumen tidak ditemukan dalam sistem.';
   String get costEstimationTitle =>
       isEnglish ? 'Maintenance Cost Estimation' : 'Estimasi Biaya Perawatan';
   String get costEstimation => costEstimationTitle;

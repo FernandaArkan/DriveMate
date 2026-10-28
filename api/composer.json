@@ -1,0 +1,6 @@
+{
+    "require": {
+        "kornrunner/keccak": "^1.1",
+        "web3p/ethereum-tx": "^0.4.3"
+    }
+}

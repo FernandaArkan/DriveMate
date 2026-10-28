@@ -1,4 +1,17 @@
 
+FROM composer:2 AS composer_deps
+
+WORKDIR /app
+
+COPY api/composer.json api/composer.lock ./
+
+RUN composer install \
+    --no-dev \
+    --prefer-dist \
+    --no-interaction \
+    --no-progress \
+    --optimize-autoloader
+
 FROM php:8.2-cli
 
 RUN apt-get update \
@@ -10,6 +23,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY api/ ./api/
+COPY --from=composer_deps /app/vendor ./api/vendor
 
 ENV PORT=8080
 ENV PHP_CLI_SERVER_WORKERS=4

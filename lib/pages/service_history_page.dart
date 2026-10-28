@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../database/database_helper.dart';
 import '../localization/app_localizations.dart';
+import '../models/blockchain_document.dart';
 import '../models/service_record.dart';
 import '../models/vehicle.dart';
+import '../repositories/user_repository.dart';
 import '../repositories/vehicle_repository.dart';
+import '../services/blockchain_document_service.dart';
 import '../services/currency_service.dart';
 import '../theme/app_theme.dart';
 
@@ -24,6 +29,8 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
   bool _isLoading = true;
   String _selectedFilter = 'Semua';
   bool _isChainValid = true;
+  final Map<int, BlockchainDocument> _docCache = {};
+  final Set<int> _generatingIds = <int>{};
 
   @override
   void initState() {
@@ -295,6 +302,375 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
     }
   }
 
+  Future<void> _handleGeneratePdf(ServiceRecord rec) async {
+    final recId = rec.id;
+    if (recId == null) return;
+
+    if (_docCache.containsKey(recId)) {
+      _showCertificateDetailsDialog(_docCache[recId]!, rec);
+      return;
+    }
+
+    setState(() {
+      _generatingIds.add(recId);
+    });
+
+    final vehicle = _selectedVehicle;
+    final userId = UserRepository.instance.currentUser?.id;
+
+    final response = await BlockchainDocumentService.instance.generatePdfDocument(
+      serviceRecordId: recId,
+      vehicleId: vehicle?.id,
+      userId: userId,
+    );
+
+    if (mounted) {
+      setState(() {
+        _generatingIds.remove(recId);
+      });
+
+      if (response.isSuccess && response.data != null) {
+        final doc = response.data!;
+        setState(() {
+          _docCache[recId] = doc;
+        });
+        _showCertificateDetailsDialog(doc, rec);
+      } else {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(response.message ?? 'Gagal membuat dokumen PDF.'),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Ulangi',
+                onPressed: () => _handleGeneratePdf(rec),
+              ),
+            ),
+          );
+      }
+    }
+  }
+
+  void _showCertificateDetailsDialog(BlockchainDocument doc, ServiceRecord rec) {
+    final l10n = AppLocalizations.of(context);
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.verified_user_rounded, color: AppTheme.primary, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.certificateDialogTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    rec.title,
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: doc.isVerified
+                      ? AppTheme.success.withValues(alpha: 0.12)
+                      : (doc.isFailed
+                          ? AppTheme.danger.withValues(alpha: 0.12)
+                          : const Color(0xFFFEF3C7)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      doc.isVerified
+                          ? Icons.check_circle_rounded
+                          : (doc.isFailed ? Icons.error_rounded : Icons.pending_rounded),
+                      size: 16,
+                      color: doc.isVerified
+                          ? AppTheme.success
+                          : (doc.isFailed ? AppTheme.danger : const Color(0xFFB45309)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        doc.isVerified
+                            ? l10n.verifiedStatus
+                            : (doc.isFailed ? l10n.failedStatus : l10n.pendingStatus),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: doc.isVerified
+                              ? AppTheme.success
+                              : (doc.isFailed ? AppTheme.danger : const Color(0xFFB45309)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                l10n.documentIdLabel,
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 3),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.background,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        doc.documentId,
+                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: doc.documentId));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(l10n.copySuccessNotice), duration: const Duration(seconds: 1)),
+                        );
+                      },
+                      child: const Icon(Icons.copy_rounded, size: 16, color: AppTheme.primary),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                l10n.documentHashLabel,
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textSecondary),
+              ),
+              const SizedBox(height: 3),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.background,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        doc.documentHash,
+                        style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: AppTheme.textPrimary),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: doc.documentHash));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(l10n.copySuccessNotice), duration: const Duration(seconds: 1)),
+                        );
+                      },
+                      child: const Icon(Icons.copy_rounded, size: 16, color: AppTheme.primary),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Jaringan:', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                  Text(doc.networkName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              if (doc.transactionHash != null) ...[
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Tx Hash:', style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                    Text(
+                      '${doc.transactionHash!.substring(0, 10)}...',
+                      style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              side: const BorderSide(color: AppTheme.primary),
+            ),
+            icon: const Icon(Icons.open_in_browser_rounded, size: 16),
+            label: Text(l10n.verifyBlockchain, style: const TextStyle(fontSize: 12)),
+            onPressed: () async {
+              final uri = Uri.parse(doc.verificationUrl);
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
+            label: Text(l10n.viewPdf, style: const TextStyle(fontSize: 12)),
+            onPressed: () async {
+              final uri = Uri.parse(doc.pdfUrl);
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openVerificationDialog() {
+    final l10n = AppLocalizations.of(context);
+    final ctrl = TextEditingController();
+    bool isChecking = false;
+    Map<String, dynamic>? resultData;
+    String? errorText;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            l10n.verifyServiceDocDialogTitle,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: ctrl,
+                  decoration: InputDecoration(
+                    labelText: l10n.documentIdLabel,
+                    hintText: l10n.verifyInputHint,
+                    errorText: errorText,
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.paste_rounded, size: 18),
+                      onPressed: () async {
+                        final data = await Clipboard.getData('text/plain');
+                        if (data?.text != null) {
+                          ctrl.text = data!.text!.trim();
+                          setDlgState(() => errorText = null);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (isChecking)
+                  const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+                else if (resultData != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.background,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          resultData!['status_title'] as String? ?? 'Hasil Verifikasi',
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          resultData!['status_description'] as String? ?? '',
+                          style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+                    icon: const Icon(Icons.public_rounded, size: 16),
+                    label: Text(l10n.verifyBlockchain),
+                    onPressed: () async {
+                      final url = BlockchainDocumentService.instance.getVerificationUrl(ctrl.text.trim());
+                      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: Text(l10n.cancel),
+            ),
+            if (!isChecking)
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppTheme.navy),
+                onPressed: () async {
+                  final text = ctrl.text.trim();
+                  if (text.isEmpty) {
+                    setDlgState(() => errorText = 'ID Dokumen wajib diisi');
+                    return;
+                  }
+                  setDlgState(() {
+                    isChecking = true;
+                    errorText = null;
+                  });
+
+                  final res = await BlockchainDocumentService.instance.verifyDocument(documentId: text);
+
+                  setDlgState(() {
+                    isChecking = false;
+                    if (res.isSuccess && res.data != null) {
+                      resultData = res.data;
+                    } else {
+                      errorText = res.message ?? l10n.documentNotFoundNotice;
+                    }
+                  });
+                },
+                child: Text(l10n.checkIntegrityBtn),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _monthName(int m) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
     return months[m - 1];
@@ -318,6 +694,11 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: l10n.verifyServiceDocDialogTitle,
+            icon: const Icon(Icons.verified_outlined, color: AppTheme.navy),
+            onPressed: _openVerificationDialog,
+          ),
           IconButton(
             tooltip: l10n.addServiceRecordTooltip,
             icon: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.primary),
@@ -619,6 +1000,96 @@ class _ServiceHistoryPageState extends State<ServiceHistoryPage> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 10),
+          // Blockchain Certificate Actions
+          Row(
+            children: [
+              if (_generatingIds.contains(rec.id))
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppTheme.background,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Memproses Sertifikat PDF...',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                      side: BorderSide(
+                        color: _docCache.containsKey(rec.id) ? AppTheme.success : AppTheme.primary,
+                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: Icon(
+                      _docCache.containsKey(rec.id)
+                          ? Icons.verified_rounded
+                          : Icons.picture_as_pdf_outlined,
+                      size: 15,
+                      color: _docCache.containsKey(rec.id) ? AppTheme.success : AppTheme.primary,
+                    ),
+                    label: Text(
+                      _docCache.containsKey(rec.id)
+                          ? 'Sertifikat Blockchain'
+                          : l10n.generatePdfCertificate,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _docCache.containsKey(rec.id) ? AppTheme.success : AppTheme.primary,
+                      ),
+                    ),
+                    onPressed: () => _handleGeneratePdf(rec),
+                  ),
+                ),
+                if (_docCache.containsKey(rec.id)) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: l10n.viewPdf,
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppTheme.background,
+                      padding: const EdgeInsets.all(8),
+                    ),
+                    icon: const Icon(Icons.open_in_new_rounded, size: 16, color: AppTheme.navy),
+                    onPressed: () async {
+                      final url = _docCache[rec.id]!.pdfUrl;
+                      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                    },
+                  ),
+                  IconButton(
+                    tooltip: l10n.verifyBlockchain,
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppTheme.background,
+                      padding: const EdgeInsets.all(8),
+                    ),
+                    icon: const Icon(Icons.qr_code_2_rounded, size: 16, color: AppTheme.primary),
+                    onPressed: () async {
+                      final url = _docCache[rec.id]!.verificationUrl;
+                      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                    },
+                  ),
+                ],
+              ],
+            ],
           ),
         ],
       ),

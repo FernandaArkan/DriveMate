@@ -1,4 +1,3 @@
-
 <?php
 
 // Load .env if present.
@@ -91,4 +90,16 @@ return [
     'gemini_api_key' => $getEnv('GEMINI_API_KEY')
         ?: $getEnv('AI_API_KEY'),
     'openai_api_key' => $getEnv('OPENAI_API_KEY'),
+
+    // Blockchain & Smart Contract configuration.
+    'blockchain_rpc_url' => $getEnv('BLOCKCHAIN_RPC_URL', ''),
+    'blockchain_contract_address' => $getEnv('BLOCKCHAIN_CONTRACT_ADDRESS', ''),
+    'blockchain_private_key' => $getEnv('BLOCKCHAIN_PRIVATE_KEY', ''),
+    'blockchain_network_name' => $getEnv('BLOCKCHAIN_NETWORK_NAME', 'Polygon Amoy Testnet'),
+
+    // App Base URL for QR codes and verification links.
+    'app_base_url' => $getEnv(
+        'APP_BASE_URL',
+        'https://drivemate-3c397.containers.snapdeploy.app'
+    ),
 ];
