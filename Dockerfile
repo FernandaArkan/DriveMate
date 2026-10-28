@@ -1,7 +1,16 @@
 
-FROM composer:2 AS composer_deps
+FROM php:8.2-cli AS composer_deps
 
-WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       git unzip libgmp-dev \
+    && docker-php-ext-install gmp \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /app/api
 
 COPY api/composer.json api/composer.lock ./
 
@@ -15,15 +24,16 @@ RUN composer install \
 FROM php:8.2-cli
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev \
-    && docker-php-ext-install pdo_pgsql \
+    && apt-get install -y --no-install-recommends \
+       libpq-dev libgmp-dev \
+    && docker-php-ext-install pdo_pgsql gmp \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY api/ ./api/
-COPY --from=composer_deps /app/vendor ./api/vendor
+COPY --from=composer_deps /app/api/vendor ./api/vendor
 
 ENV PORT=8080
 ENV PHP_CLI_SERVER_WORKERS=4
